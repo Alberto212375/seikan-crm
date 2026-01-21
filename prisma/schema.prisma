@@ -1,0 +1,276 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PartyType {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum ProspectStage {
+  NEW
+  CONTACTED
+  MEETING
+  QUOTE_SENT
+  WON
+  LOST
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  LATE
+  CANCELED
+}
+
+enum DocumentType {
+  QUOTE_PDF
+  INVOICE_PDF
+  CREDIT_NOTE_PDF
+  OTHER
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activities Activity[]
+}
+
+model Prospect {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  convertedAt DateTime?
+
+  name    String
+  company String?
+  email   String?
+  phone   String?
+  source  String?
+  stage   ProspectStage @default(NEW)
+
+  needType  String?
+  eventDate DateTime?
+  location  String?
+  notes     String?
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  activities Activity[]
+  quotes     Quote[]
+}
+
+model Client {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  type       PartyType @default(INDIVIDUAL)
+  typeLocked Boolean   @default(false)
+
+  companyName String?
+  serviceName String?
+
+  displayName String
+
+  email String?
+  phone String?
+
+  billingAddress  String?
+  shippingAddress String?
+  tags            String[] @default([])
+
+  notes String?
+
+  prospects  Prospect[]
+  quotes     Quote[]
+  invoices   Invoice[]
+  documents  Document[]
+  activities Activity[]
+}
+
+model Quote {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ✅ archivage
+  archivedAt DateTime?
+
+  // ✅ numérotation + snapshot + arrhes
+  seq           Int     @unique
+  clientName    String
+  clientService String?
+  clientEmail   String?
+  clientPhone   String?
+  clientAddress String?
+
+  issueDate DateTime @default(now())
+  validDays Int      @default(30)
+  metaJson  String?
+
+  totalHT    Int
+  depositPct Int @default(35)
+  depositHT  Int
+  balanceHT  Int
+
+  depositPaid       Boolean @default(false)
+  depositPaidAmount Int     @default(0)
+
+  number     String      @unique
+  status     QuoteStatus @default(DRAFT)
+  validUntil DateTime?
+
+  prospectId String?
+  prospect   Prospect? @relation(fields: [prospectId], references: [id])
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  currency String  @default("EUR")
+  notes    String?
+
+  items     QuoteItem[]
+  invoices  Invoice[]
+  documents Document[]
+}
+
+model QuoteItem {
+  id      String @id @default(cuid())
+  quoteId String
+  quote   Quote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  label        String
+  qty          Float  @default(1)
+  unitPrice    Int
+  vatRate      Float  @default(0)
+  discountRate Float  @default(0)
+
+  sort Int @default(0)
+}
+
+model Invoice {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ✅ archivage
+  archivedAt DateTime?
+
+  // ✅ meta (remise %, remise €, pénalité etc.)
+  metaJson String?
+
+  number   String        @unique
+  status   InvoiceStatus @default(DRAFT)
+  issuedAt DateTime?
+  dueAt    DateTime?
+
+  // ✅ montants (comme devis, mais facture)
+  totalHT    Int @default(0)
+  depositPct Int @default(35)
+  depositHT  Int @default(0)
+
+  // ✅ arrhes (copiées depuis le devis au moment de la transformation)
+  depositPaid       Boolean @default(false)
+  depositPaidAmount Int     @default(0)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  quoteId String?
+  quote   Quote?  @relation(fields: [quoteId], references: [id])
+
+  currency String  @default("EUR")
+  notes    String?
+
+  items     InvoiceItem[]
+  payments  Payment[]
+  documents Document[]
+}
+
+model InvoiceItem {
+  id        String  @id @default(cuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  label        String
+  qty          Float  @default(1)
+  unitPrice    Int
+  vatRate      Float  @default(0)
+  discountRate Float  @default(0)
+
+  sort Int @default(0)
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  amount    Int
+  method    String
+  reference String?
+  paidAt    DateTime?
+}
+
+model Document {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  type       DocumentType
+  filename   String
+  mimeType   String
+  size       Int
+  storageKey String
+  sha256     String?
+
+  quoteId String?
+  quote   Quote?  @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  type  String
+  title String
+  body  String?
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  prospectId String?
+  prospect   Prospect? @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}

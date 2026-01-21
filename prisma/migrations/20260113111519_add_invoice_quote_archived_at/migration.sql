@@ -1,0 +1,11 @@
+-- AlterTable
+ALTER TABLE "Invoice" ADD COLUMN     "archivedAt" TIMESTAMP(3),
+ADD COLUMN     "depositHT" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "depositPaid" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "depositPaidAmount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "depositPct" INTEGER NOT NULL DEFAULT 35,
+ADD COLUMN     "metaJson" TEXT,
+ADD COLUMN     "totalHT" INTEGER NOT NULL DEFAULT 0;
+
+-- AlterTable
+ALTER TABLE "Quote" ADD COLUMN     "archivedAt" TIMESTAMP(3);
