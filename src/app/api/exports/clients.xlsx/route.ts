@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+
 function safeJsonNotes(s: string | null | undefined): any | null {
   if (!s) return null;
   try {

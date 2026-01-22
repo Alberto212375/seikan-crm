@@ -2,6 +2,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 type NotesJson = Record<string, any>;
 
 function safeJsonNotes(s: string | null | undefined): NotesJson {

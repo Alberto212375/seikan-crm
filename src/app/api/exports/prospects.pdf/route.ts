@@ -5,6 +5,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {

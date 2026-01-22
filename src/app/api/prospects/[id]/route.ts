@@ -2,6 +2,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+
 type Methode = { physique: boolean; appel: boolean; mail: boolean };
 type NotesJson = Record<string, any>;
 

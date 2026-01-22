@@ -2,6 +2,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 function eurosToCents(v: unknown): number {
   const n = Number(String(v ?? "").replace(",", "."));
   if (!Number.isFinite(n)) return 0;
