@@ -40,6 +40,11 @@ type QuoteMeta = {
     francoThreshold?: number;
     francoCost?: number;
   };
+
+  // ✅ signature tablette (stockée par /api/quotes/[id]/signature)
+  signature?: {
+    signedAt?: string; // ISO string
+  };
 };
 
 function safeJsonParse<T>(s: string | null | undefined): T | null {
@@ -68,6 +73,25 @@ function pad2(n: number) {
 function formatDateFRShort(d: Date) {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
+function formatDateFRDayMonth(d: Date) {
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}`;
+}
+
+function addDays(date: Date, days: number) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+// ✅ échéance "avant le" = 2 jours avant la clôture
+function computePayBeforeFromClosure(closingDateIso: string | undefined | null): Date | null {
+  const closing = closingDateIso ? parseIsoDateOnly(closingDateIso) : null;
+  if (!closing) return null;
+  const d = new Date(closing);
+  d.setDate(d.getDate() - 2); // -2 jours calendaires
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function tryParseDate(input: unknown): Date | null {
   if (!input) return null;
   if (input instanceof Date) return isNaN(input.getTime()) ? null : input;
@@ -211,21 +235,40 @@ const totalHT = (rawItems as RawItem[]).reduce((s, it) => s + Math.round(it.qty 
   const quoteDepositPct = toInt(((invoice as any).quote as any)?.depositPct ?? 0, 0);
   const deferredPayment = Boolean(postersMeta.deferredPayment) || quoteDepositPct > 0;
 
-  // Due date (28 du mois de livraison) si paiement différé
-  const dueDate28 = deferredPayment ? computeDueDate28FromClosure(postersMeta.closingDate ?? null) : null;
-  const dueDate28Str = dueDate28 ? formatDateFRLong(dueDate28) : "";
+  // ✅ Échéances demandées
+// - PayBefore : clôture - 2 jours (comptant + acompte différé)
+// - BalanceDue : J+30 (référence = signature devis si dispo, sinon date facture)
+const payBefore = computePayBeforeFromClosure(postersMeta.closingDate ?? null);
+const payBeforeStr = payBefore ? formatDateFRDayMonth(payBefore) : "";
+
+// date "commande" = date de signature si dispo, sinon facture (issuedAt/createdAt)
+const signedAt = tryParseDate((meta as any)?.signature?.signedAt) ?? null;
+const invoiceRef = tryParseDate((invoice as any).issuedAt ?? (invoice as any).createdAt ?? Date.now()) ?? new Date();
+const orderRefDate = signedAt ?? invoiceRef;
+
+const balanceDue = addDays(orderRefDate, 30);
+const balanceDueStr = balanceDue ? formatDateFRDayMonth(balanceDue) : "";
 
   // Date d’émission facture
   const issuedAt = tryParseDate((invoice as any).issuedAt ?? (invoice as any).createdAt ?? Date.now()) ?? new Date();
   const issuedAtStr = formatDateFRShort(issuedAt);
 
-  // accompte / reste à payer (on conserve ta logique existante)
-  const depositPaid = Boolean((invoice as any).depositPaid);
-  const depositPaidAmountHT = Number((invoice as any).depositPaidAmount ?? 0) || 0; // supposé HT
-  const restToPayHT = depositPaid ? Math.max(0, totalHT - depositPaidAmountHT) : totalHT;
+  // ✅ acompte / reste à payer
+const depositPaid = Boolean((invoice as any).depositPaid);
 
-  const depositPaidAmountTTC = vatExempt ? depositPaidAmountHT : Math.round(depositPaidAmountHT * 1.2);
-  const restToPayTTC = vatExempt ? restToPayHT : totalTTC - depositPaidAmountTTC;
+// montant "prévu" d'acompte = invoice.depositHT (champ propre)
+// montant réellement payé = invoice.depositPaidAmount (si depositPaid=true)
+const depositExpectedHT = Math.max(0, Number((invoice as any).depositHT ?? 0) || 0);
+const depositActuallyPaidHT = Math.max(0, Number((invoice as any).depositPaidAmount ?? 0) || 0);
+
+// ligne acompte : si payé => montant payé, sinon => montant attendu
+const depositLineHT = depositPaid ? depositActuallyPaidHT : depositExpectedHT;
+
+// reste : si acompte non payé => reste après acompte attendu ; si payé => reste après montant payé
+const restToPayHT = Math.max(0, totalHT - (depositPaid ? depositActuallyPaidHT : depositExpectedHT));
+
+const depositLineTTC = vatExempt ? depositLineHT : Math.round(depositLineHT * 1.2);
+const restToPayTTC = vatExempt ? restToPayHT : totalTTC - (vatExempt ? 0 : Math.round((depositPaid ? depositActuallyPaidHT : depositExpectedHT) * 1.2));
 
   // Police locale
   const fontPath = path.join(process.cwd(), "src", "assets", "fonts", "DejaVuSans.ttf");
@@ -451,8 +494,8 @@ const totalHT = (rawItems as RawItem[]).reduce((s, it) => s + Math.round(it.qty 
 
   // Text légal (très proche devis, harmonisé)
   const paiementHeader = deferredPayment
-    ? `Paiement différé : solde à régler au plus tard le ${dueDate28Str || "28 du mois de livraison"} : Par virement bancaire`
-    : "";
+  ? `Paiement différé : acompte avant le ${payBeforeStr || "—"} et solde avant le ${balanceDueStr || "—"} : Par virement bancaire`
+  : "";
 
   const lateClause = deferredPayment
     ? `En cas de retard de paiement, des pénalités de retard sont dues, calculées à un taux égal à 3 fois le taux
@@ -582,16 +625,17 @@ Mentions légales :
 
     // accompte / reste (facture) : UNIQUEMENT si paiement différé
 if (deferredPayment) {
-  y = addTotalLineAt(
-    y,
-    depositPaid ? "accompte versées (TTC)" : "Accompte non versées (TTC)",
-    depositPaid ? depositPaidAmountTTC : 0,
-    true
-  );
-  y = addTotalLineAt(y, "Reste à payer (TTC)", restToPayTTC, true);
+  const depBase = depositPaid ? "Accompte versé (TTC)" : "Accompte à verser (TTC)";
+  const depLabel = payBeforeStr ? `${depBase} avant le ${payBeforeStr}` : depBase;
+
+  const balBase = "Reste à payer (TTC)";
+  const balLabel = balanceDueStr ? `${balBase} avant le ${balanceDueStr}` : balBase;
+
+  y = addTotalLineAt(y, depLabel, depositLineTTC, true);
+  y = addTotalLineAt(y, balLabel, restToPayTTC, true);
 } else {
-  // Paiement comptant : pas d'accompte à afficher
-  y = addTotalLineAt(y, "Montant à payer (TTC)", totalTTC, true);
+  const label = payBeforeStr ? `Montant à payer (TTC) avant le ${payBeforeStr}` : "Montant à payer (TTC)";
+  y = addTotalLineAt(y, label, totalTTC, true);
 }
 
 y += 10;
@@ -802,16 +846,17 @@ y += 10;
 
       // accompte / reste : UNIQUEMENT si paiement différé
 if (deferredPayment) {
-  y = addTotalLineAt(
-    y,
-    depositPaid ? "accompte versées (TTC)" : "Accompte non versées (TTC)",
-    depositPaid ? depositPaidAmountTTC : 0,
-    true
-  );
-  y = addTotalLineAt(y, "Reste à payer (TTC)", restToPayTTC, true);
+  const depBase = depositPaid ? "Accompte versé (TTC)" : "Accompte à verser (TTC)";
+  const depLabel = payBeforeStr ? `${depBase} avant le ${payBeforeStr}` : depBase;
+
+  const balBase = "Reste à payer (TTC)";
+  const balLabel = balanceDueStr ? `${balBase} avant le ${balanceDueStr}` : balBase;
+
+  y = addTotalLineAt(y, depLabel, depositLineTTC, true);
+  y = addTotalLineAt(y, balLabel, restToPayTTC, true);
 } else {
-  // Paiement comptant : pas d'accompte à afficher
-  y = addTotalLineAt(y, "Montant à payer (TTC)", totalTTC, true);
+  const label = payBeforeStr ? `Montant à payer (TTC) avant le ${payBeforeStr}` : "Montant à payer (TTC)";
+  y = addTotalLineAt(y, label, totalTTC, true);
 }
 
 y += 10;

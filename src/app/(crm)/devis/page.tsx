@@ -69,8 +69,9 @@ type QuoteMeta = {
   };
 
   posters?: {
-    deferredPayment?: boolean;
-  };
+  deferredPayment?: boolean;
+  closingDate?: string; // ✅ utilisé pour affichage "avant le" (clôture - 2 jours)
+};
 
   signature?: {
     signerFirstName?: string;
@@ -131,6 +132,52 @@ function fmtDateFR(d: string) {
   const mm = String(dt.getMonth() + 1).padStart(2, "0");
   const yy = dt.getFullYear();
   return `${dd}/${mm}/${yy}`;
+}
+
+function fmtDayMonthShort(d: Date) {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}`;
+}
+
+function addDays(date: Date, days: number) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function parseIsoDateOnly(s: string): Date | null {
+  const raw = String(s || "").trim();
+  if (!raw) return null;
+  const d = new Date(raw + "T00:00:00");
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// ✅ échéance "avant le" = 2 jours avant la clôture
+function computePayBeforeFromMeta(metaJson: string | null): Date | null {
+  const meta = safeJsonParse<QuoteMeta>(metaJson) ?? {};
+  const closingIso = String(meta?.posters?.closingDate ?? "").trim();
+  const closing = closingIso ? parseIsoDateOnly(closingIso) : null;
+  if (!closing) return null;
+  const d = new Date(closing);
+  d.setDate(d.getDate() - 2);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// ✅ date "commande" = signature si dispo, sinon date émission devis (issueDate/createdAt)
+function computeBalanceDueFromQuote(q: QuoteRow): Date | null {
+  const meta = safeJsonParse<QuoteMeta>(q.metaJson) ?? {};
+  const signedAt = meta?.signature?.signedAt ? new Date(meta.signature.signedAt) : null;
+  const ref =
+    signedAt && !Number.isNaN(signedAt.getTime())
+      ? signedAt
+      : (() => {
+          const d = new Date(q.issueDate || q.createdAt);
+          return Number.isNaN(d.getTime()) ? null : d;
+        })();
+
+  if (!ref) return null;
+  return addDays(ref, 30);
 }
 
 function extractPartyInfo(q: QuoteRow) {
@@ -645,6 +692,13 @@ async function saveSignature() {
                   const deferredPayment = getDeferredPaymentFromMeta(q.metaJson);
                   const lockDepositUI = !deferredPayment; // ✅ si pas paiement différé => acompte figé
 
+                  const payBeforeDate = computePayBeforeFromMeta(q.metaJson);
+const payBeforeStr = payBeforeDate ? fmtDayMonthShort(payBeforeDate) : "";
+
+const balanceDueDate = deferredPayment ? computeBalanceDueFromQuote(q) : null;
+const balanceDueStr = balanceDueDate ? fmtDayMonthShort(balanceDueDate) : "";
+
+
                   return (
                     <tr
                       key={q.id}
@@ -740,21 +794,35 @@ async function saveSignature() {
                           <span className="text-xs text-neutral-500">€</span>
                         </div>
 
-                        {lockDepositUI && (
-                          <div className="mt-1 text-[11px] text-neutral-500">Paiement comptant : acompte désactivé.</div>
-                        )}
+                        {lockDepositUI ? (
+  <div className="mt-1 text-[11px] text-neutral-500">Paiement comptant : acompte désactivé.</div>
+) : (
+  <div className="mt-1 text-[11px] text-neutral-500">
+    {payBeforeStr ? `Acompte à verser avant le ${payBeforeStr}.` : "Acompte à verser avant la clôture."}
+  </div>
+)}
                       </td>
 
                       {/* Restant HT / TTC */}
                       <td className="px-4 py-3 md:px-5 md:py-4">
                         <div className="text-xs tabular-nums">
-                          <div>
-                            HT : <span className="font-medium">{centsToEurosStr(computeRemainingHTCents(q))} €</span>
-                          </div>
-                          <div className="text-neutral-700">
-                            TTC : <span className="font-medium">{centsToEurosStr(computeRemainingTTCCents(q))} €</span>
-                          </div>
-                        </div>
+  <div>
+    HT : <span className="font-medium">{centsToEurosStr(computeRemainingHTCents(q))} €</span>
+  </div>
+
+  <div className="text-neutral-700">
+    TTC : <span className="font-medium">{centsToEurosStr(computeRemainingTTCCents(q))} €</span>
+    {deferredPayment ? (
+      <span className="text-neutral-500">
+        {balanceDueStr ? ` — avant le ${balanceDueStr}` : ""}
+      </span>
+    ) : (
+      <span className="text-neutral-500">
+        {payBeforeStr ? ` — avant le ${payBeforeStr}` : ""}
+      </span>
+    )}
+  </div>
+</div>
                       </td>
 
                       <td className="px-4 py-3 md:px-5 md:py-4">
@@ -1341,6 +1409,15 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
     setCreating(false);
   }
 
+  // ✅ Échéances affichées (homogènes avec Facture)
+// - PayBefore = clôture - 2 jours
+// - BalanceDue = (signature si dispo => pas ici) sinon date émission (today) + 30
+const payBeforeCreateDate = closureObj?.date ? addDays(closureObj.date, -2) : null;
+const payBeforeCreateStr = payBeforeCreateDate ? fmtDayMonthShort(payBeforeCreateDate) : "";
+
+const balanceDueCreateDate = addDays(new Date(), 30);
+const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <div className="mb-6 flex items-start justify-between gap-3">
@@ -1665,7 +1742,11 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
           </div>
 
           <div className="rounded-xl border p-3">
-            <div className="text-neutral-700">Acompte ({computed.depositPct}%)</div>
+            <div className="text-neutral-700">
+  {deferredPayment
+    ? `Acompte (${computed.depositPct}%)${payBeforeCreateStr ? ` — avant le ${payBeforeCreateStr}` : ""}`
+    : `Acompte (${computed.depositPct}%)`}
+</div>
             <div className="mt-1 text-lg font-semibold tabular-nums">{centsToEurosStr(computed.depositHT)} €</div>
             <div className="mt-1 text-xs text-neutral-500">
               {deferredPayment ? "Paiement différé : acompte 50%." : "Paiement comptant : acompte 0€ (tout en solde)."}
@@ -1673,9 +1754,22 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
           </div>
 
           <div className="rounded-xl border p-3">
-            <div className="text-neutral-700">Solde</div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">{centsToEurosStr(computed.balanceHT)} €</div>
-          </div>
+  <div className="text-neutral-700">
+    {deferredPayment
+      ? `Solde — avant le ${balanceDueCreateStr}`
+      : `Montant à payer — avant le ${payBeforeCreateStr || "—"}`}
+  </div>
+
+  <div className="mt-1 text-lg font-semibold tabular-nums">
+    {deferredPayment ? centsToEurosStr(computed.balanceHT) : centsToEurosStr(computed.totalTTC)} €
+  </div>
+
+  <div className="mt-1 text-xs text-neutral-500">
+    {deferredPayment
+      ? "Paiement différé : solde à régler sous 30 jours (date de signature, sinon date d’émission)."
+      : "Paiement comptant : règlement avant clôture (J-2)."}
+  </div>
+</div>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
