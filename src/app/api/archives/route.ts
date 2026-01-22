@@ -2,9 +2,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
-  export const dynamic = "force-dynamic";
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+export async function GET() {
 
   try {
     // On prend les devis archivés, et on récupère la facture archivée liée s'il y en a une
