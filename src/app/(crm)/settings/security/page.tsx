@@ -11,3 +11,4 @@ export default async function SecurityPage() {
 
   return <SecurityClient />;
 }
+

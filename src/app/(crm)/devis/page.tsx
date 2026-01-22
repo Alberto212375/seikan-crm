@@ -334,24 +334,20 @@ function QuoteList({
   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
   const [facturedQuoteIds, setFacturedQuoteIds] = useState<Set<string>>(new Set());
 
-    // ✅ tablette uniquement (écran <= 1024 + tactile)
-  const [isTablet, setIsTablet] = useState(false);
+      // ✅ Mode compact (tablette / petit écran) : plus fiable que pointer:coarse
+  const [isCompact, setIsCompact] = useState(false);
 
   useEffect(() => {
     const compute = () => {
       const w = typeof window !== "undefined" ? window.innerWidth : 9999;
-      const coarse =
-        typeof window !== "undefined" && window.matchMedia
-          ? window.matchMedia("(pointer: coarse)").matches
-          : false;
-
-      setIsTablet(coarse && w <= 1024);
+      setIsCompact(w <= 1024);
     };
 
     compute();
     window.addEventListener("resize", compute);
     return () => window.removeEventListener("resize", compute);
   }, []);
+
 
   // ✅ modale signature
   const [signOpen, setSignOpen] = useState(false);
@@ -361,6 +357,25 @@ function QuoteList({
   const [signerRole, setSignerRole] = useState("");
   const [bonPourAccord, setBonPourAccord] = useState(false);
   const [signSaving, setSignSaving] = useState(false);
+
+    // ✅ Empêche la page de scroller pendant la signature (iPad/Safari)
+  useEffect(() => {
+    if (!signOpen) return;
+
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevBodyOverscroll = (document.body.style as any).overscrollBehavior;
+
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    (document.body.style as any).overscrollBehavior = "contain";
+
+    return () => {
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+      (document.body.style as any).overscrollBehavior = prevBodyOverscroll;
+    };
+  }, [signOpen]);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
@@ -417,9 +432,13 @@ function getSignatureDataUrl(): string {
 
 function getPos(e: any, canvas: HTMLCanvasElement) {
   const r = canvas.getBoundingClientRect();
-  const x = ("touches" in e ? e.touches[0].clientX : e.clientX) - r.left;
-  const y = ("touches" in e ? e.touches[0].clientY : e.clientY) - r.top;
-  return { x, y };
+
+  const t = e?.touches?.[0] || e?.changedTouches?.[0] || null;
+
+  const clientX = t ? t.clientX : e.clientX;
+  const clientY = t ? t.clientY : e.clientY;
+
+  return { x: clientX - r.left, y: clientY - r.top };
 }
 
 function startDraw(e: any) {
@@ -552,7 +571,7 @@ async function saveSignature() {
       <div className="mb-6 flex items-start justify-between gap-3">
         <div>
           <div className="text-3xl font-semibold">Devis</div>
-          <div className="text-sm text-neutral-600">Tous les devis générés (PRO / Particulier).</div>
+          <div className="text-sm text-neutral-700">Tous les devis générés (PRO / Particulier).</div>
         </div>
 
         <button type="button" onClick={onCreate} className="rounded-xl bg-black px-4 py-2 text-sm text-white">
@@ -592,7 +611,7 @@ async function saveSignature() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-neutral-50 text-left">
-              <tr className="text-neutral-600">
+  <tr className="text-neutral-800">
                 <th className="px-4 py-3 w-[160px]">N°</th>
                 <th className="px-4 py-3 w-[110px]">Date</th>
                 <th className="px-4 py-3 w-[80px]">Type</th>
@@ -732,7 +751,7 @@ async function saveSignature() {
                           <div>
                             HT : <span className="font-medium">{centsToEurosStr(computeRemainingHTCents(q))} €</span>
                           </div>
-                          <div className="text-neutral-500">
+                          <div className="text-neutral-700">
                             TTC : <span className="font-medium">{centsToEurosStr(computeRemainingTTCCents(q))} €</span>
                           </div>
                         </div>
@@ -740,7 +759,7 @@ async function saveSignature() {
 
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-2">
-                          {isTablet && !isQuoteSigned(q.metaJson) && (
+                          {isCompact && !isQuoteSigned(q.metaJson) && (
                             <button
                               type="button"
                               className="rounded-xl border px-3 py-2 text-xs"
@@ -751,7 +770,7 @@ async function saveSignature() {
                             </button>
                           )}
 
-                          {isTablet && isQuoteSigned(q.metaJson) && (
+                          {isCompact && isQuoteSigned(q.metaJson) && (
                             <div className="rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700 border border-emerald-200">
                               Signé
                             </div>
@@ -818,9 +837,12 @@ async function saveSignature() {
       </div>
 
       {/* ✅✅✅ MODALE SIGNATURE — À LA FIN DU RETURN QuoteList */}
-      {signOpen && isTablet && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-xl rounded-2xl bg-white shadow-xl overflow-hidden">
+      {signOpen && isCompact && (
+        <div
+  className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overscroll-contain"
+  onTouchMove={(e) => e.preventDefault()}
+>
+          <div className="w-full max-w-xl rounded-2xl bg-white shadow-xl overflow-hidden overscroll-contain">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <div className="text-sm font-semibold">Signature du devis</div>
               <button
@@ -873,17 +895,17 @@ async function saveSignature() {
                 <div className="text-xs text-neutral-600 mb-2">Signature manuscrite</div>
 
                 <canvas
-                  ref={canvasRef}
-                  className="w-full rounded-xl bg-white border"
-                  style={{ height: 140 }}
-                  onMouseDown={startDraw}
-                  onMouseMove={moveDraw}
-                  onMouseUp={endDraw}
-                  onMouseLeave={endDraw}
-                  onTouchStart={startDraw}
-                  onTouchMove={moveDraw}
-                  onTouchEnd={endDraw}
-                />
+  ref={canvasRef}
+  className="w-full rounded-xl bg-white border touch-none select-none"
+  style={{ height: 140, touchAction: "none" as any }}
+  onMouseDown={startDraw}
+  onMouseMove={moveDraw}
+  onMouseUp={endDraw}
+  onMouseLeave={endDraw}
+  onTouchStart={startDraw}
+  onTouchMove={moveDraw}
+  onTouchEnd={endDraw}
+/>
 
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <button
@@ -1621,7 +1643,7 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
         {/* totaux */}
         <div className="mt-3 grid gap-2 text-sm text-neutral-700 md:grid-cols-2">
           <div className="rounded-xl border p-3">
-            <div className="text-neutral-500">Total HT</div>
+            <div className="text-neutral-700">Total HT</div>
             <div className="mt-1 text-lg font-semibold tabular-nums">{centsToEurosStr(computed.totalHT)} €</div>
             <div className="mt-1 text-xs text-neutral-500">
               Franco :{" "}
@@ -1631,7 +1653,7 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
           </div>
 
           <div className="rounded-xl border p-3">
-            <div className="text-neutral-500">Total TTC</div>
+            <div className="text-neutral-700">Total TTC</div>
             <div className="mt-1 text-lg font-semibold tabular-nums">{centsToEurosStr(computed.totalTTC)} €</div>
             {computed.vatRate > 0 ? (
               <div className="mt-1 text-xs text-neutral-500">
@@ -1643,7 +1665,7 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
           </div>
 
           <div className="rounded-xl border p-3">
-            <div className="text-neutral-500">Acompte ({computed.depositPct}%)</div>
+            <div className="text-neutral-700">Acompte ({computed.depositPct}%)</div>
             <div className="mt-1 text-lg font-semibold tabular-nums">{centsToEurosStr(computed.depositHT)} €</div>
             <div className="mt-1 text-xs text-neutral-500">
               {deferredPayment ? "Paiement différé : acompte 50%." : "Paiement comptant : acompte 0€ (tout en solde)."}
@@ -1651,7 +1673,8 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
           </div>
 
           <div className="rounded-xl border p-3">
-            <div className="text-neutral-500">Solde</div>
+            <div className="text-neutral-7
+            00">Solde</div>
             <div className="mt-1 text-lg font-semibold tabular-nums">{centsToEurosStr(computed.balanceHT)} €</div>
           </div>
         </div>

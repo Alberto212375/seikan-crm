@@ -187,6 +187,97 @@ function readPngSize(filePath: string): { w: number; h: number } | null {
   }
 }
 
+function decodeDataUrlToPngBuffer(dataUrl: string): Buffer | null {
+  try {
+    const s = String(dataUrl || "");
+    if (!s.startsWith("data:image/")) return null;
+    const base64 = s.split(",")[1] || "";
+    if (!base64) return null;
+    return Buffer.from(base64, "base64");
+  } catch {
+    return null;
+  }
+}
+
+// ✅ Détourage + recadrage (si pngjs dispo). Fallback = buffer original.
+function tryTrimSignaturePng(buf: Buffer): Buffer {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { PNG } = require("pngjs");
+
+    const png = PNG.sync.read(buf);
+    const { width, height, data } = png;
+
+    // 1) rendre le "presque blanc" transparent
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (width * y + x) << 2;
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const a = data[i + 3];
+
+        if (a === 0) continue;
+
+        // blanc / quasi blanc => transparent
+        if (r >= 245 && g >= 245 && b >= 245) {
+          data[i + 3] = 0;
+        }
+      }
+    }
+
+    // 2) bounding box des pixels non transparents
+    let minX = width,
+      minY = height,
+      maxX = -1,
+      maxY = -1;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (width * y + x) << 2;
+        const a = data[i + 3];
+        if (a > 0) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    // si rien trouvé, on renvoie le PNG original
+    if (maxX < 0 || maxY < 0) return buf;
+
+    // padding léger (évite de couper la plume)
+    const pad = 6;
+    minX = Math.max(0, minX - pad);
+    minY = Math.max(0, minY - pad);
+    maxX = Math.min(width - 1, maxX + pad);
+    maxY = Math.min(height - 1, maxY + pad);
+
+    const outW = maxX - minX + 1;
+    const outH = maxY - minY + 1;
+
+    const out = new PNG({ width: outW, height: outH });
+
+    for (let y = 0; y < outH; y++) {
+      for (let x = 0; x < outW; x++) {
+        const srcI = (width * (minY + y) + (minX + x)) << 2;
+        const dstI = (outW * y + x) << 2;
+        out.data[dstI] = data[srcI];
+        out.data[dstI + 1] = data[srcI + 1];
+        out.data[dstI + 2] = data[srcI + 2];
+        out.data[dstI + 3] = data[srcI + 3];
+      }
+    }
+
+    return PNG.sync.write(out);
+  } catch {
+    // pngjs pas dispo ou erreur => fallback
+    return buf;
+  }
+}
+
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const quote = await prisma.quote.findUnique({
     where: { id: params.id },
@@ -386,23 +477,22 @@ et la livraison pourra être reportée à la clôture de commande suivante.`;
 
   const signerRole = signedOk ? String(signature?.signerRole ?? "").trim() : "";
 
-  const legalTextBase = signedOk
-    ? `${paiementHeader ? paiementHeader + "\n" : ""}IBAN : ${iban}
+  const legalSignedBefore = `${paiementHeader ? paiementHeader + "\n" : ""}IBAN : ${iban}
 BIC : ${bic}
 
-Bon pour accord : OUI
+Bon pour accord : Confirmé
 Signataire : ${signerFull}${signerRole ? ` — ${signerRole}` : ""}
 Signé le : ${signedAtLabel}
 
-Signature :
+Signature :`;
 
-
-${lateClause}
+const legalSignedAfter = `${lateClause}
 Une indemnité forfaitaire de 40 € pour frais de recouvrement sera également exigible (articles L.441-10
 et D.441-5 du Code de commerce).
 Mentions légales :
-- TVA non applicable, art. 293 B du CGI`
-    : `${paiementHeader ? paiementHeader + "\n" : ""}IBAN : ${iban}
+- TVA non applicable, art. 293 B du CGI`;
+
+const legalUnsigned = `${paiementHeader ? paiementHeader + "\n" : ""}IBAN : ${iban}
 BIC : ${bic}
 
 Si ce devis vous convient, veuillez le signer et le dater en marquant "Lu et approuvé. Bon pour Accord.".
@@ -527,7 +617,10 @@ Mentions légales :
   // Légal : on le shrink si besoin, mais on réserve une base.
   // On va mesurer avec font 8 / lineGap 2.
   doc.fontSize(8);
-  const legalBaseH = doc.heightOfString(legalTextBase, { width: usableW, lineGap: 2 });
+  const legalBaseH = doc.heightOfString(signedOk ? (legalSignedBefore + "\n\n" + legalSignedAfter) : legalUnsigned, {
+  width: usableW,
+  lineGap: 2,
+});
 
   // Espace dispo pour TABLEAU en mode "1 page"
   const availableForTableIfSingle = (FOOTER_SAFE_TOP - 6) - (yTableStart + 16 + 8) - totalsReserve - legalBaseH;
@@ -691,51 +784,60 @@ Mentions légales :
 
     y += 10;
 
-    // LEGAL : shrink pour tenir avant footer (et éviter page fantôme)
-    const legalBottomY = FOOTER_SAFE_TOP - 6;
-    let legalFont = 8;
-    let legalLineGap = 2;
+    // ✅ LEGAL + signature "au bon endroit"
+const legalBottomY = FOOTER_SAFE_TOP - 6;
 
-    while (legalFont >= 6.8) {
-      doc.fontSize(legalFont);
-      const h = doc.heightOfString(legalTextBase, { width: usableW, lineGap: legalLineGap });
-      if (y + h <= legalBottomY) break;
-      legalFont -= 0.2;
-      if (legalFont < 7.4) legalLineGap = 1.5;
-    }
+let legalFont = 8;
+let legalLineGap = 2;
 
-    doc.fontSize(legalFont).fillColor("#111").text(legalTextBase, left, y, {
-      width: usableW,
-      lineGap: legalLineGap,
-      align: "left",
-    });
+const sigReserveH = signedOk ? 74 : 0; // hauteur image + marge
+const sigGap = signedOk ? 8 : 0;
 
-        // ✅ Dessin de la signature (si présente)
-    if (signedOk) {
-      try {
-        const dataUrl = String(signature.signatureDataUrl || "");
-        const base64 = dataUrl.split(",")[1] || "";
-        const img = Buffer.from(base64, "base64");
+// on shrink en tenant compte de l'image
+while (legalFont >= 6.8) {
+  doc.fontSize(legalFont);
 
-        // on place la signature juste sous la ligne "Signature :"
-        // => on remonte une petite estimation : on ajoute un offset fixe
-        const sigW = 220;
-        const sigH = 70;
+  const textH = signedOk
+    ? doc.heightOfString(legalSignedBefore + "\n\n" + legalSignedAfter, { width: usableW, lineGap: legalLineGap })
+    : doc.heightOfString(legalUnsigned, { width: usableW, lineGap: legalLineGap });
 
-        // rectangle élégant
-        const sigX = left;
-        const sigY = doc.y + 6; // doc.y = fin du dernier text
-        doc.save();
-        doc.lineWidth(1);
-        doc.strokeColor("#111");
-        doc.rect(sigX, sigY, sigW, sigH).stroke();
-        doc.restore();
+  const totalH = textH + sigReserveH + sigGap;
 
-        doc.image(img, sigX + 8, sigY + 8, { width: sigW - 16, height: sigH - 16 });
-      } catch {
-        // si image illisible, on n'empêche pas le PDF
-      }
-    }
+  if (y + totalH <= legalBottomY) break;
+
+  legalFont -= 0.2;
+  if (legalFont < 7.4) legalLineGap = 1.5;
+}
+
+// rendu
+doc.fontSize(legalFont).fillColor("#111");
+
+if (!signedOk) {
+  doc.text(legalUnsigned, left, y, { width: usableW, lineGap: legalLineGap, align: "left" });
+} else {
+  // 1) avant
+  doc.text(legalSignedBefore, left, y, { width: usableW, lineGap: legalLineGap, align: "left" });
+
+  // 2) image juste après
+  const imgBufRaw = decodeDataUrlToPngBuffer(String(signature?.signatureDataUrl || ""));
+  if (imgBufRaw) {
+    const imgBuf = tryTrimSignaturePng(imgBufRaw);
+
+    const sigW = 240; // largeur visuelle
+    const sigH = 64;  // hauteur max
+    const sigX = left + 2;
+    const sigY = doc.y + 6;
+
+    // ✅ PAS DE CADRE, juste l'image
+    doc.image(imgBuf, sigX, sigY, { fit: [sigW, sigH] });
+
+    // on force le curseur sous la zone signature
+    doc.y = sigY + sigH + 6;
+  }
+
+  // 3) après
+  doc.text("\n" + legalSignedAfter, left, doc.y, { width: usableW, lineGap: legalLineGap, align: "left" });
+}
 
     // FOOTER 1/1
     drawFooter(1, 1);
@@ -897,7 +999,10 @@ Mentions légales :
 
     // legal base
     doc.fontSize(8);
-    const legalH = doc.heightOfString(legalTextBase, { width: usableW, lineGap: 2 });
+    const legalH = doc.heightOfString(signedOk ? (legalSignedBefore + "\n\n" + legalSignedAfter) : legalUnsigned, {
+  width: usableW,
+  lineGap: 2,
+});
 
     return y + totalsH + legalH <= FOOTER_SAFE_TOP - 6;
   }
@@ -925,104 +1030,113 @@ Mentions légales :
 
     // Si on est sur la dernière page (soit dernière page table si fitOnLast, soit page ajoutée)
     if (isLastRenderedPage) {
-      // Calcul y de départ : si on est sur une page ajoutée => y = 110
-      // Sinon (totaux sur dernière page table) => on doit calculer la position y après table affichée
-      let y = 110;
+  // Calcul y de départ : si on est sur une page ajoutée => y = 110
+  // Sinon (totaux sur dernière page table) => on doit calculer la position y après table affichée
+  let y = 110;
 
-      if (fitOnLast) {
-        // On est sur la dernière page de table
-        const isFirst = tablePages.length === 1;
-        let yStart = 0;
+  if (fitOnLast) {
+    // On est sur la dernière page de table
+    const isFirst = tablePages.length === 1;
+    let yStart = 0;
 
-        if (isFirst) {
-          yStart = yTableStart;
-        } else {
-          yStart = 100 + 16 + 8;
-        }
-
-        // header table
-        y = yStart + (16 + 8);
-
-        // lignes table
-        doc.fontSize(splitTableFont);
-        for (const it of tablePages[tablePages.length - 1]) {
-          const labelH = doc.heightOfString(String(it.label ?? ""), { width: colDesignationW, lineGap: splitLineGap });
-          const rowH = Math.max(labelH, splitTableFont + 2) + 3;
-          y += rowH;
-        }
-
-        y += 18; // marge après tableau
-      } else {
-        // page ajoutée : y reste 110
-        y = 110;
-      }
-
-      // Totaux
-      y = addTotalLineAt(y, "TOTAL HT", totalHT);
-      if (!vatExempt) y = addTotalLineAt(y, "TVA (20%)", vatAmount);
-      y = addTotalLineAt(y, "TOTAL TTC", totalTTC);
-
-      y += 6;
-
-      if (!deferredPayment) {
-        y = addTotalLineAt(y, "Montant à payer lors de la commande :", totalTTC, true);
-      } else {
-        const dueShort = dueDate28 ? formatDateFRShort(dueDate28) : "28 du mois de livraison";
-        const acompteTTC = vatExempt ? depositHT : Math.round((totalTTC * depositPct) / 100);
-        const soldeTTC = vatExempt ? balanceHT : totalTTC - acompteTTC;
-
-        y = addTotalLineAt(y, "Acompte à payer à la commande :", acompteTTC, true);
-        y = addTotalLineAt(y, `Solde restant à payer au ${dueShort} :`, soldeTTC, true);
-      }
-
-      y += 10;
-
-      // Légal (shrink)
-      const legalBottomY = FOOTER_SAFE_TOP - 6;
-      let legalFont = 8;
-      let legalLineGap = 2;
-
-      while (legalFont >= 6.8) {
-        doc.fontSize(legalFont);
-        const h = doc.heightOfString(legalTextBase, { width: usableW, lineGap: legalLineGap });
-        if (y + h <= legalBottomY) break;
-        legalFont -= 0.2;
-        if (legalFont < 7.4) legalLineGap = 1.5;
-      }
-
-            doc.fontSize(legalFont).fillColor("#111").text(legalTextBase, left, y, {
-        width: usableW,
-        lineGap: legalLineGap,
-        align: "left",
-      });
-
-      // ✅ Dessin de la signature (si présente)
-      if (signedOk) {
-        try {
-          const dataUrl = String(signature.signatureDataUrl || "");
-          const base64 = dataUrl.split(",")[1] || "";
-          const img = Buffer.from(base64, "base64");
-
-          // on place la signature juste sous la ligne "Signature :"
-          // => on remonte une petite estimation : on ajoute un offset fixe
-          const sigW = 220;
-          const sigH = 70;
-
-          // rectangle élégant
-          const sigX = left;
-          const sigY = doc.y + 6; // doc.y = fin du dernier text
-          doc.save();
-          doc.lineWidth(1);
-          doc.strokeColor("#111");
-          doc.rect(sigX, sigY, sigW, sigH).stroke();
-          doc.restore();
-
-          doc.image(img, sigX + 8, sigY + 8, { width: sigW - 16, height: sigH - 16 });
-        } catch {
-          // si image illisible, on n'empêche pas le PDF
-        }
-      }
+    if (isFirst) {
+      yStart = yTableStart;
+    } else {
+      yStart = 100 + 16 + 8;
     }
+
+    // header table
+    y = yStart + (16 + 8);
+
+    // lignes table
+    doc.fontSize(splitTableFont);
+    for (const it of tablePages[tablePages.length - 1]) {
+      const labelH = doc.heightOfString(String(it.label ?? ""), { width: colDesignationW, lineGap: splitLineGap });
+      const rowH = Math.max(labelH, splitTableFont + 2) + 3;
+      y += rowH;
+    }
+
+    y += 18; // marge après tableau
+  } else {
+    // page ajoutée : y reste 110
+    y = 110;
+  }
+
+  // Totaux
+  y = addTotalLineAt(y, "TOTAL HT", totalHT);
+  if (!vatExempt) y = addTotalLineAt(y, "TVA (20%)", vatAmount);
+  y = addTotalLineAt(y, "TOTAL TTC", totalTTC);
+
+  y += 6;
+
+  if (!deferredPayment) {
+    y = addTotalLineAt(y, "Montant à payer lors de la commande :", totalTTC, true);
+  } else {
+    const dueShort = dueDate28 ? formatDateFRShort(dueDate28) : "28 du mois de livraison";
+    const acompteTTC = vatExempt ? depositHT : Math.round((totalTTC * depositPct) / 100);
+    const soldeTTC = vatExempt ? balanceHT : totalTTC - acompteTTC;
+
+    y = addTotalLineAt(y, "Acompte à payer à la commande :", acompteTTC, true);
+    y = addTotalLineAt(y, `Solde restant à payer au ${dueShort} :`, soldeTTC, true);
+  }
+
+  y += 10;
+
+  // ✅ LEGAL + signature "au bon endroit"
+  const legalBottomY = FOOTER_SAFE_TOP - 6;
+
+  let legalFont = 8;
+  let legalLineGap = 2;
+
+  const sigReserveH = signedOk ? 74 : 0; // hauteur image + marge
+  const sigGap = signedOk ? 8 : 0;
+
+  // on shrink en tenant compte de l'image
+  while (legalFont >= 6.8) {
+    doc.fontSize(legalFont);
+
+    const textH = signedOk
+      ? doc.heightOfString(legalSignedBefore + "\n\n" + legalSignedAfter, { width: usableW, lineGap: legalLineGap })
+      : doc.heightOfString(legalUnsigned, { width: usableW, lineGap: legalLineGap });
+
+    const totalH = textH + sigReserveH + sigGap;
+
+    if (y + totalH <= legalBottomY) break;
+
+    legalFont -= 0.2;
+    if (legalFont < 7.4) legalLineGap = 1.5;
+  }
+
+  // rendu
+  doc.fontSize(legalFont).fillColor("#111");
+
+  if (!signedOk) {
+    doc.text(legalUnsigned, left, y, { width: usableW, lineGap: legalLineGap, align: "left" });
+  } else {
+    // 1) avant
+    doc.text(legalSignedBefore, left, y, { width: usableW, lineGap: legalLineGap, align: "left" });
+
+    // 2) image juste après
+    const imgBufRaw = decodeDataUrlToPngBuffer(String(signature?.signatureDataUrl || ""));
+    if (imgBufRaw) {
+      const imgBuf = tryTrimSignaturePng(imgBufRaw);
+
+      const sigW = 240; // largeur visuelle
+      const sigH = 64;  // hauteur max
+      const sigX = left + 2;
+      const sigY = doc.y + 6;
+
+      // ✅ PAS DE CADRE, juste l'image
+      doc.image(imgBuf, sigX, sigY, { fit: [sigW, sigH] });
+
+      // on force le curseur sous la zone signature
+      doc.y = sigY + sigH + 6;
+    }
+
+    // 3) après
+    doc.text("\n" + legalSignedAfter, left, doc.y, { width: usableW, lineGap: legalLineGap, align: "left" });
+  }
+}
 
     // Footer fixe page idx+1 / totalPages
     drawFooter(idx + 1, totalPages);
