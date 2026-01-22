@@ -90,11 +90,20 @@ function tryParseDate(input: unknown): Date | null {
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
 }
-
 function parseIsoDateOnly(s: string): Date | null {
   const raw = String(s || "").trim();
   if (!raw) return null;
+
+  // on force une date "minuit" locale pour éviter les décalages
   const d = new Date(raw + "T00:00:00");
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function computePayBeforeDateFromClosure(closingDateIso: string | undefined | null): Date | null {
+  const closing = closingDateIso ? parseIsoDateOnly(closingDateIso) : null;
+  if (!closing) return null;
+  const d = new Date(closing);
+  d.setDate(d.getDate() - 2); // J-2
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -324,9 +333,13 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const validUntil = tryParseDate((quote as any).validUntil) ?? issueDate;
   const validUntilStr = formatDateFRShort(validUntil);
 
-  // ✅ échéance 28 du mois de livraison
-  const dueDate28 = deferredPayment ? computeDueDate28FromClosure(postersMeta.closingDate ?? null) : null;
-  const dueDate28Str = dueDate28 ? formatDateFRLong(dueDate28) : "";
+  // ✅ échéances paiement
+const payBeforeDate = computePayBeforeDateFromClosure(postersMeta.closingDate ?? null);
+const payBeforeShort = payBeforeDate ? formatDateFRShort(payBeforeDate) : "";
+
+const dueDate28 = deferredPayment ? computeDueDate28FromClosure(postersMeta.closingDate ?? null) : null;
+const dueShort = dueDate28 ? formatDateFRShort(dueDate28) : "";
+const dueDate28Str = dueDate28 ? formatDateFRLong(dueDate28) : "";
 
   // Police locale
   const fontPath = path.join(process.cwd(), "src", "assets", "fonts", "DejaVuSans.ttf");
@@ -729,10 +742,9 @@ Mentions légales :
 
   // Helper : header MINIMAL (pages suivantes du tableau)
   function drawTableContinuationHeader() {
-    // Option : on garde juste le titre "DEVIS XXX" (pas de blocs émetteur/destinataire/livraison)
-    doc.fontSize(14).fillColor("black").text(`DEVIS ${(quote as any).number ?? ""}`, left, 70, { width: usableW, align: "center" });
-    // Table header ensuite
-  }
+  // ✅ Pages suivantes : pas de répétition du numéro de devis
+  // (on garde juste le tableau)
+}
 
   // =========================
   // MODE A : 1 PAGE (avant) si possible
@@ -772,15 +784,23 @@ Mentions légales :
     y += 6;
 
     if (!deferredPayment) {
-      y = addTotalLineAt(y, "Montant à payer lors de la commande :", totalTTC, true);
-    } else {
-      const dueShort = dueDate28 ? formatDateFRShort(dueDate28) : "28 du mois de livraison";
-      const acompteTTC = vatExempt ? depositHT : Math.round((totalTTC * depositPct) / 100);
-      const soldeTTC = vatExempt ? balanceHT : totalTTC - acompteTTC;
+  const label = payBeforeShort
+    ? `Montant à payer avant le ${payBeforeShort} :`
+    : "Montant à payer lors de la commande :";
+  y = addTotalLineAt(y, label, totalTTC, true);
+} else {
+  const dueLabel = dueShort || "28 du mois de livraison";
 
-      y = addTotalLineAt(y, "Acompte à payer à la commande :", acompteTTC, true);
-      y = addTotalLineAt(y, `Solde restant à payer au ${dueShort} :`, soldeTTC, true);
-    }
+  const acompteTTC = vatExempt ? depositHT : Math.round((totalTTC * depositPct) / 100);
+  const soldeTTC = vatExempt ? balanceHT : totalTTC - acompteTTC;
+
+  const acompteLabel = payBeforeShort
+    ? `Acompte à payer avant le ${payBeforeShort} :`
+    : "Acompte à payer à la commande :";
+
+  y = addTotalLineAt(y, acompteLabel, acompteTTC, true);
+  y = addTotalLineAt(y, `Solde restant à payer au ${dueLabel} :`, soldeTTC, true);
+}
 
     y += 10;
 
@@ -1011,14 +1031,12 @@ if (!signedOk) {
 
   // Si ça ne tient pas, on ajoute une page “totaux+légal”
   if (!fitOnLast) {
-    pages.push(() => {
-      drawPageBase();
-      // page sans répétition, juste titre discret
-      doc.fontSize(14).fillColor("black").text(`DEVIS ${(quote as any).number ?? ""}`, left, 70, { width: usableW, align: "center" });
-      // start
-      // (le footer est géré en fin globale)
-    });
-  }
+  pages.push(() => {
+    drawPageBase();
+    // ✅ pas de répétition du numéro de devis ici non plus
+    // (le footer est géré en fin globale)
+  });
+}
 
   // Maintenant on rend tout, en gérant footers Page X/Y
   const totalPages = pages.length;
@@ -1070,15 +1088,23 @@ if (!signedOk) {
   y += 6;
 
   if (!deferredPayment) {
-    y = addTotalLineAt(y, "Montant à payer lors de la commande :", totalTTC, true);
-  } else {
-    const dueShort = dueDate28 ? formatDateFRShort(dueDate28) : "28 du mois de livraison";
-    const acompteTTC = vatExempt ? depositHT : Math.round((totalTTC * depositPct) / 100);
-    const soldeTTC = vatExempt ? balanceHT : totalTTC - acompteTTC;
+  const label = payBeforeShort
+    ? `Montant à payer avant le ${payBeforeShort} :`
+    : "Montant à payer lors de la commande :";
+  y = addTotalLineAt(y, label, totalTTC, true);
+} else {
+  const dueLabel = dueShort || "28 du mois de livraison";
 
-    y = addTotalLineAt(y, "Acompte à payer à la commande :", acompteTTC, true);
-    y = addTotalLineAt(y, `Solde restant à payer au ${dueShort} :`, soldeTTC, true);
-  }
+  const acompteTTC = vatExempt ? depositHT : Math.round((totalTTC * depositPct) / 100);
+  const soldeTTC = vatExempt ? balanceHT : totalTTC - acompteTTC;
+
+  const acompteLabel = payBeforeShort
+    ? `Acompte à payer avant le ${payBeforeShort} :`
+    : "Acompte à payer à la commande :";
+
+  y = addTotalLineAt(y, acompteLabel, acompteTTC, true);
+  y = addTotalLineAt(y, `Solde restant à payer au ${dueLabel} :`, soldeTTC, true);
+}
 
   y += 10;
 

@@ -1148,21 +1148,23 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
     setQtyByRef((prev) => {
       const next: Record<string, number> = { ...prev };
 
-      if (firstOrder) {
-        // Première commande = ON => 1
-        next[ref.ref] = 1;
-        return next;
-      }
+      const minQty = firstOrder ? 1 : 2;
 
-      // Première commande = OFF
-      if (countBefore === 0) {
-        // 1er poster => 1
-        next[ref.ref] = 1;
-        return next;
-      }
+if (firstOrder) {
+  // Première commande = ON => 1
+  next[ref.ref] = 1;
+  return next;
+}
 
-      // 2e poster (ou +) => 2
-      next[ref.ref] = 2;
+// Première commande = OFF => min 2 par article
+if (countBefore === 0) {
+  // 1er poster => 2
+  next[ref.ref] = minQty;
+  return next;
+}
+
+// 2e poster (ou +) => 2
+next[ref.ref] = minQty;
 
       // bump le 1er de 1 -> 2 UNE SEULE FOIS
       if (firstSelected) {
@@ -1180,9 +1182,13 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
   }
 
   function setQty(refCode: string, qty: number) {
-    const q = Number.isFinite(qty) ? Math.trunc(qty) : 0;
-    setQtyByRef((prev) => ({ ...prev, [refCode]: q }));
-  }
+  const minQty = firstOrder ? 1 : 2;
+
+  const q0 = Number.isFinite(qty) ? Math.trunc(qty) : 0;
+  const q = clampInt(q0, minQty, 9999);
+
+  setQtyByRef((prev) => ({ ...prev, [refCode]: q }));
+}
 
   const selectionsByFormat = useMemo(() => {
     const map: Record<PosterFormat, Array<{ ref: PosterRef; qty: number }>> = {
@@ -1594,20 +1600,71 @@ const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
                   </label>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-neutral-500">Qté</span>
-                    <input
-                      className="w-[90px] rounded-lg border px-2 py-1 md:px-3 md:py-2 text-sm tabular-nums"
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={checked ? displayQty : ""}
-                      disabled={!checked}
-                      onChange={(e) => {
-                        const n = parseInt(e.target.value || "1", 10);
-                        setQty(r.ref, clampInt(n, 1, 9999));
-                      }}
-                    />
-                  </div>
+  <span className="text-xs text-neutral-500">Qté</span>
+
+  {/* - */}
+  <button
+    type="button"
+    className="h-9 w-9 rounded-lg border text-sm disabled:opacity-40"
+    disabled={!checked}
+    onClick={() => {
+      const minQty = firstOrder ? 1 : 2;
+      const cur = checked ? displayQty : 0;
+      setQty(r.ref, Math.max(minQty, (cur || minQty) - 1));
+    }}
+    aria-label="Diminuer la quantité"
+    title="Diminuer"
+  >
+    −
+  </button>
+
+  {/* input iPad-friendly */}
+  <input
+    className="h-9 w-[90px] rounded-lg border px-2 text-sm tabular-nums text-center"
+    type="text"
+    inputMode="numeric"
+    pattern="[0-9]*"
+    value={checked ? String(displayQty) : ""}
+    disabled={!checked}
+    onChange={(e) => {
+      // garde uniquement les chiffres (iPad)
+      const raw = (e.target.value || "").replace(/[^\d]/g, "");
+      const n = raw ? parseInt(raw, 10) : 0;
+
+      // règle : si première commande OFF -> min 2
+      if (!firstOrder) {
+        if (n <= 1) return setQty(r.ref, 2); // tape 1 => revient à 2
+        return setQty(r.ref, clampInt(n, 2, 9999));
+      }
+
+      // première commande ON -> min 1
+      if (n <= 0) return setQty(r.ref, 1);
+      setQty(r.ref, clampInt(n, 1, 9999));
+    }}
+    onBlur={() => {
+      // sécurité : si l’input a “glissé” => on recale au min
+      const minQty = firstOrder ? 1 : 2;
+      const cur = checked ? displayQty : 0;
+      setQty(r.ref, Math.max(minQty, cur || minQty));
+    }}
+  />
+
+  {/* + */}
+  <button
+    type="button"
+    className="h-9 w-9 rounded-lg border text-sm disabled:opacity-40"
+    disabled={!checked}
+    onClick={() => {
+      const minQty = firstOrder ? 1 : 2;
+      const cur = checked ? displayQty : 0;
+      setQty(r.ref, (cur || minQty) + 1);
+    }}
+    aria-label="Augmenter la quantité"
+    title="Augmenter"
+  >
+    +
+  </button>
+</div>
                 </div>
               </div>
             );
