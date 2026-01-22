@@ -19,10 +19,11 @@ async function main() {
   try {
     const hash = await bcrypt.hash(password, 10);
 
+    // ✅ Upsert "updatable" : force role ADMIN + update password/name à chaque seed
     await prisma.user.upsert({
       where: { email },
-      update: {},
-      create: { email, password: hash, name: "Admin" },
+      update: { password: hash, name: "Admin", role: "ADMIN" },
+      create: { email, password: hash, name: "Admin", role: "ADMIN" },
     });
 
     console.log("Seed OK:", { email, password });

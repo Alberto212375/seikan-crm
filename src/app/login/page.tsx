@@ -6,7 +6,7 @@ import { login } from "./actions";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams?: { from?: string };
+  searchParams?: { from?: string; error?: string };
 }) {
   const session = await auth();
   if (session?.user) redirect("/dashboard");
@@ -14,12 +14,20 @@ export default async function LoginPage({
   const from = searchParams?.from;
   const callbackUrl = from && from.startsWith("/") ? from : "/dashboard";
 
+  const error = searchParams?.error;
+  const errorMessage =
+    error === "credentials"
+      ? "Email ou mot de passe incorrect."
+      : error === "config"
+      ? "Configuration d’authentification invalide."
+      : null;
+
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900">
       <main className="mx-auto max-w-md px-6 py-16">
         <h1 className="text-3xl font-semibold tracking-tight">Connexion</h1>
         <p className="mt-2 text-zinc-600">
-          Accède au CRM (local).{" "}
+          Accède au CRM.{" "}
           <Link href="/" className="underline underline-offset-4">
             Retour accueil
           </Link>
@@ -50,6 +58,12 @@ export default async function LoginPage({
             autoComplete="current-password"
             required
           />
+
+          {errorMessage && (
+            <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {errorMessage}
+            </div>
+          )}
 
           <button
             type="submit"
