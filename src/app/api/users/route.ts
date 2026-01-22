@@ -33,6 +33,7 @@ export async function POST(req: Request) {
   if (!me) return new Response("Forbidden", { status: 403 });
 
   const body = await req.json().catch(() => null);
+
   const email = String(body?.email ?? "").trim().toLowerCase();
   const name = String(body?.name ?? "").trim();
   const password = String(body?.password ?? "");
@@ -40,6 +41,20 @@ export async function POST(req: Request) {
 
   if (!email || !password) {
     return new Response("Email et mot de passe requis", { status: 400 });
+  }
+  if (!email.includes("@")) {
+    return new Response("Email invalide", { status: 400 });
+  }
+  if (password.length < 8) {
+    return new Response("Mot de passe trop court (min 8 caractères)", {
+      status: 400,
+    });
+  }
+
+  // ✅ évite 500 en cas d'email déjà existant
+  const exists = await prisma.user.findUnique({ where: { email } });
+  if (exists) {
+    return new Response("Cet email existe déjà", { status: 409 });
   }
 
   const hash = await bcrypt.hash(password, 10);
