@@ -70,7 +70,7 @@ export async function GET() {
     });
 
     // ✅ ajoute isProfessional (PRO/PART) dans la liste
-    const enriched = invoices.map((inv) => {
+    const enriched = invoices.map((inv: any) => {
       const invMeta = safeParse<InvoiceMetaLite>(inv.metaJson) ?? {};
       const fromQuoteMetaJson = invMeta.fromQuoteMetaJson ?? null;
       const quoteMeta = safeParse<QuoteMetaLite>(fromQuoteMetaJson) ?? {};
@@ -136,7 +136,7 @@ export async function POST(req: Request) {
         discountRate: 0,
       }));
 
-    const totalHT = items.reduce((s: number, it) => s + Math.round((it.qty ?? 0) * (it.unitPrice ?? 0)), 0);
+    const totalHT = items.reduce((s: number, it: any) => s + Math.round((it.qty ?? 0) * (it.unitPrice ?? 0)), 0);
 
     // ✅ arrhes : on fige l’état du devis au moment de la transformation
     const depositPct = Number((quote as any).depositPct ?? 35) || 35;
@@ -175,7 +175,7 @@ export async function POST(req: Request) {
         depositPaidAmount,
 
         items: {
-          create: items.map((it) => ({
+          create: items.map((it: any) => ({
             label: it.label,
             qty: it.qty,
             unitPrice: it.unitPrice,

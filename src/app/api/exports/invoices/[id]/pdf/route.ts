@@ -199,7 +199,8 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     });
 
   // Totaux HT
-  const totalHT = rawItems.reduce((s, it) => s + Math.round(it.qty * it.unit), 0);
+  type RawItem = { qty: number; unit: number };
+const totalHT = (rawItems as RawItem[]).reduce((s, it) => s + Math.round(it.qty * it.unit), 0);
 
   // TVA affichage (même règle devis) : par défaut exempt => pas de TVA ; si vatExempt=false => 20%
   const vatExempt = postersMeta.vatExempt !== false;

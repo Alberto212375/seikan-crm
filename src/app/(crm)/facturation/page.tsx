@@ -1,8 +1,10 @@
 // src/app/(crm)/factures/page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+
+export const dynamic = "force-dynamic";
 
 type InvoiceListRow = {
   id: string;
@@ -107,7 +109,7 @@ function TypeBadge({ isPro }: { isPro: boolean }) {
   );
 }
 
-export default function FacturationPage() {
+function FacturationInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const openId = searchParams.get("open") || "";
@@ -621,5 +623,12 @@ export default function FacturationPage() {
         </div>
       )}
     </div>
+  );
+}
+export default function FacturationPage() {
+  return (
+    <Suspense fallback={null}>
+      <FacturationInner />
+    </Suspense>
   );
 }

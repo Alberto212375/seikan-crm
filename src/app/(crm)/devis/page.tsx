@@ -1,8 +1,10 @@
 // src/app/(crm)/devis/page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+
+export const dynamic = "force-dynamic";
 
 type ClientUi = {
   id: string;
@@ -1673,7 +1675,7 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
   );
 }
 
-export default function DevisPage() {
+function DevisInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -1686,8 +1688,22 @@ export default function DevisPage() {
   const mode: "list" | "create" = clientFromUrl || isNew ? "create" : "list";
 
   if (mode === "list") {
-    return <QuoteList createdNumber={createdNumber} createdId={createdId} onCreate={() => router.replace("/devis?new=1")} />;
+    return (
+      <QuoteList
+        createdNumber={createdNumber}
+        createdId={createdId}
+        onCreate={() => router.replace("/devis?new=1")}
+      />
+    );
   }
 
   return <QuoteCreateForm clientFromUrl={clientFromUrl} />;
+}
+
+export default function DevisPage() {
+  return (
+    <Suspense fallback={null}>
+      <DevisInner />
+    </Suspense>
+  );
 }

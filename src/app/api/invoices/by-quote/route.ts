@@ -9,7 +9,7 @@ export async function GET() {
       select: { quoteId: true },
     });
 
-    const quoteIds = Array.from(new Set(invs.map((x) => x.quoteId).filter(Boolean))) as string[];
+    const quoteIds = Array.from(new Set(invs.map((x: any) => x.quoteId).filter(Boolean))) as string[];
     return NextResponse.json({ quoteIds });
   } catch (e: any) {
     console.error(e);

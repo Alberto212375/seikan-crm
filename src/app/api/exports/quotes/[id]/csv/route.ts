@@ -53,14 +53,16 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 
   // Si l'UI avait ajouté une ligne "Créneau..." à 0, on l'ignore en calcul et on la reconstruit proprement
   const hasPlaceholderOutside = rawItems.some(
-    (x) => x.label.trim() === "Créneau hors standard (+10%)"
-  );
+  (x: any) => String(x.label ?? "").trim() === "Créneau hors standard (+10%)"
+);
 
-  const itemsWithoutPlaceholder = rawItems.filter(
-    (x) => x.label.trim() !== "Créneau hors standard (+10%)"
-  );
+ const itemsWithoutPlaceholder = rawItems.filter(
+  (x: any) => String(x.label ?? "").trim() !== "Créneau hors standard (+10%)"
+);
 
-  const subtotalHT = itemsWithoutPlaceholder.reduce((s, x) => s + Math.round(x.qty * x.unit), 0);
+
+const subtotalHT = itemsWithoutPlaceholder.reduce((s: number, x: any) => s + Math.round(x.qty * x.unit), 0);
+
 
   const outsideEnabled = Boolean(meta.outsideStandardPct) || hasPlaceholderOutside;
   const outsideSurcharge = outsideEnabled ? Math.round(subtotalHT * 0.1) : 0;

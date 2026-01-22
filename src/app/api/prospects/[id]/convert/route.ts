@@ -122,7 +122,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   const id = params.id;
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       const prospect = await tx.prospect.findUnique({ where: { id } });
       if (!prospect) return NextResponse.json({ error: "Prospect introuvable" }, { status: 404 });
 
