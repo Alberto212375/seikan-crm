@@ -1,7 +1,7 @@
 // src/app/(crm)/commandes/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 type PosterFormat = "30x40" | "A3" | "A2";
 type FormatFilter = "ALL" | PosterFormat;
@@ -178,7 +178,7 @@ setSelectedClosure((prev) => prev || lastWithOrdersKey);
       </div>
 
       <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
           <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-neutral-50 text-left">
               <tr className="text-neutral-600">
@@ -214,7 +214,7 @@ setSelectedClosure((prev) => prev || lastWithOrdersKey);
                   const key = `${it.format}__${it.ref}`;
                   const isOpen = Boolean(openDetails[key]);
                   return (
-                    <>
+  <Fragment key={key}>
                       <tr key={key} className="border-t align-top">
                         <td className="px-4 py-3">
                           <span className="inline-flex rounded-full bg-black px-2 py-0.5 text-[11px] font-medium text-white">
@@ -246,7 +246,7 @@ setSelectedClosure((prev) => prev || lastWithOrdersKey);
                         <tr className="border-t bg-neutral-50">
                           <td colSpan={5} className="px-4 py-3">
                             <div className="text-xs text-neutral-600 mb-2">Détail par client</div>
-                            <div className="overflow-x-auto">
+                            <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
                               <table className="w-full min-w-[700px] text-sm">
                                 <thead className="text-left">
                                   <tr className="text-neutral-600">
@@ -275,7 +275,7 @@ setSelectedClosure((prev) => prev || lastWithOrdersKey);
                           </td>
                         </tr>
                       )}
-                    </>
+                                        </Fragment>
                   );
                 })
               )}

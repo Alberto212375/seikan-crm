@@ -335,7 +335,7 @@ function FacturationInner() {
 
       {/* LISTE (factures émises uniquement) */}
       <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
           <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-neutral-50 text-left text-neutral-600">
   <tr>
@@ -444,7 +444,7 @@ function FacturationInner() {
                 </div>
 
                 <div className="rounded-xl border p-3">
-                  <div className="text-neutral-500">Arrhes (info devis)</div>
+                  <div className="text-neutral-500">Acompte (info devis)</div>
                   <div className="mt-1 text-lg font-semibold tabular-nums">
                     {centsToEurosStr(invoice.depositPaidAmount || invoice.depositHT)} €
                   </div>
@@ -454,7 +454,7 @@ function FacturationInner() {
                         invoice.depositPaid ? "bg-emerald-600" : "bg-neutral-500"
                       }`}
                     >
-                      {invoice.depositPaid ? "Arrhes versées" : "Arrhes non versées"}
+                      {invoice.depositPaid ? "Acompte versé" : "Acompte non versé"}
                     </span>
                   </div>
                 </div>
@@ -465,7 +465,7 @@ function FacturationInner() {
                 </div>
               </div>
 
-              {/* ✅ Pénalité : uniquement si arrhes NON versées */}
+              {/* ✅ Pénalité : uniquement si acompte NON versé */}
               {!invoice.depositPaid && (
                 <div className="rounded-2xl border p-4">
                   <div className="text-sm font-medium">Pénalité retard de paiement</div>
@@ -547,7 +547,7 @@ function FacturationInner() {
 
               {/* Lignes */}
               <div className="rounded-2xl border overflow-hidden">
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
                   <table className="w-full min-w-[820px] text-sm">
                     <thead className="bg-neutral-50 text-left text-neutral-600">
   <tr>

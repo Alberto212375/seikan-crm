@@ -29,3 +29,33 @@ body {
   font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
     Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
 }
+
+/* =========================================================
+   FIX iPad / iOS Safari : inputs trop gris / illisibles
+   -> NE TOUCHE PAS desktop (règles ciblées iOS uniquement)
+   ========================================================= */
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important; /* iOS Safari */
+    opacity: 1 !important;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #6b7280 !important; /* neutral-500 */
+    opacity: 1 !important;
+  }
+
+  input:disabled,
+  textarea:disabled,
+  select:disabled,
+  input[readonly],
+  textarea[readonly] {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
+    opacity: 1 !important;
+  }
+}

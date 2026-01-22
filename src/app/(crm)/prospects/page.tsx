@@ -358,8 +358,9 @@ export default function ProspectsPage() {
         </div>
       </div>
 
-      <div className="w-full overflow-x-hidden rounded-xl border bg-white">
-        <table className="w-full table-fixed border-collapse text-sm">
+      <div className="w-full rounded-xl border bg-white">
+  <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
+    <table className="min-w-[1400px] w-full border-collapse text-[15px] md:text-sm">
           <thead className="bg-neutral-50 text-left">
             <tr>
               <th className="w-[6%] px-3 py-2">Pro</th>
@@ -459,10 +460,10 @@ export default function ProspectsPage() {
                     </td>
 
                     {/* SOCIÉTÉ */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       {showPro ? (
                         <input
-                          className="w-full min-w-0 rounded border px-2 py-1 truncate"
+                          className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2 truncate"
                           value={d.societe}
                           onChange={(e) =>
                             updateDraft(p.id, { societe: e.target.value })
@@ -483,10 +484,10 @@ export default function ProspectsPage() {
                     </td>
 
                     {/* SERVICE */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       {showPro ? (
                         <input
-                          className="w-full min-w-0 rounded border px-2 py-1 truncate"
+                          className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2 truncate"
                           value={d.service}
                           onChange={(e) =>
                             updateDraft(p.id, { service: e.target.value })
@@ -507,10 +508,10 @@ export default function ProspectsPage() {
                     </td>
 
                     {/* SIRET */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       {showPro ? (
                         <input
-                          className="w-full min-w-0 rounded border px-2 py-1 truncate"
+                          className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2 truncate"
                           placeholder="14 chiffres"
                           value={d.siret}
                           onChange={(e) =>
@@ -538,9 +539,11 @@ export default function ProspectsPage() {
                     </td>
 
                     {/* ✅ PRÉNOM (interverti) */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2 
+">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 truncate"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2
+ truncate"
                         value={d.firstName}
                         onChange={(e) =>
                           updateDraft(p.id, { firstName: e.target.value })
@@ -561,9 +564,11 @@ export default function ProspectsPage() {
                     </td>
 
                     {/* ✅ NOM (interverti) */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2
+">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 truncate"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2
+ truncate"
                         value={d.lastName}
                         onChange={(e) =>
                           updateDraft(p.id, { lastName: e.target.value })
@@ -584,10 +589,12 @@ export default function ProspectsPage() {
                     </td>
 
                     {/* EMAIL */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2
+">
                       <input
                         type="email"
-                        className="w-full min-w-0 rounded border px-2 py-1 truncate"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2
+ truncate"
                         defaultValue={p.email}
                         onBlur={async (e) => {
                           const v = e.target.value;
@@ -602,9 +609,11 @@ export default function ProspectsPage() {
                     </td>
 
                     {/* TÉL */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2
+">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 truncate"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2
+ truncate"
                         defaultValue={p.telephone}
                         onBlur={async (e) => {
                           const v = e.target.value;
@@ -619,10 +628,12 @@ export default function ProspectsPage() {
                     </td>
 
                     {/* ✅ RUE (autocomplete) */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2
+">
                       <div className="relative">
                         <input
-                          className="w-full min-w-0 rounded border px-2 py-1"
+                          className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2
+"
                           placeholder="Rue"
                           value={d.street}
                           onChange={(e) => void onStreetChange(p.id, e.target.value)}
@@ -664,9 +675,11 @@ export default function ProspectsPage() {
                     </td>
 
                     {/* ✅ CP */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2
+">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2
+"
                         placeholder="CP"
                         value={d.postalCode}
                         onChange={(e) =>
@@ -689,9 +702,10 @@ export default function ProspectsPage() {
                     </td>
 
                     {/* ✅ VILLE */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2
+">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2"
                         placeholder="Ville"
                         value={d.city}
                         onChange={(e) => updateDraft(p.id, { city: e.target.value })}
@@ -712,10 +726,10 @@ export default function ProspectsPage() {
                     </td>
 
                     {/* DÉMARCHÉ LE */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
                         type="date"
-                        className="w-full min-w-0 rounded border px-2 py-1"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2"
                         defaultValue={p.demarcheLe}
                         onBlur={async (e) => {
                           const v = e.target.value;
@@ -730,7 +744,7 @@ export default function ProspectsPage() {
                     </td>
 
                     {/* MÉTHODE */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <div className="flex flex-wrap gap-x-3 gap-y-1">
                         {(["physique", "appel", "mail"] as const).map((m) => (
                           <label key={m} className="inline-flex items-center gap-1">
@@ -754,7 +768,7 @@ export default function ProspectsPage() {
                     </td>
 
                     {/* ACTIONS */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <div className="flex flex-col items-end gap-2">
                         <button
                           onClick={async () => {
@@ -793,6 +807,7 @@ export default function ProspectsPage() {
             )}
           </tbody>
         </table>
+          </div>
 
         <div className="px-4 pb-4">
           <Pagination page={page} pageCount={pageCount} onPage={setPage} />

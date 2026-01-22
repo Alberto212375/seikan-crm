@@ -340,7 +340,7 @@ function QuoteList({
   useEffect(() => {
     const compute = () => {
       const w = typeof window !== "undefined" ? window.innerWidth : 9999;
-      setIsCompact(w <= 1024);
+      setIsCompact(w <= 1024 && (typeof window !== "undefined") && window.matchMedia("(pointer: coarse)").matches);
     };
 
     compute();
@@ -608,20 +608,20 @@ async function saveSignature() {
       )}
 
       <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-sm">
+        <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
+          <table className="w-full min-w-[1200px] text-[13px] md:text-[15px]">
             <thead className="bg-neutral-50 text-left">
   <tr className="text-neutral-800">
-                <th className="px-4 py-3 w-[160px]">N°</th>
-                <th className="px-4 py-3 w-[110px]">Date</th>
-                <th className="px-4 py-3 w-[80px]">Type</th>
-                <th className="px-4 py-3">Société</th>
-                <th className="px-4 py-3">Service</th>
-                <th className="px-4 py-3">Nom</th>
-                <th className="px-4 py-3">Prénom</th>
-                <th className="px-4 py-3 w-[220px]">Acompte</th>
-                <th className="px-4 py-3 w-[180px]">Restant (HT / TTC)</th>
-                <th className="px-4 py-3 w-[220px] text-right">Actions</th>
+                <th className="px-4 py-3 md:px-5 md:py-4 w-[160px]">N°</th>
+                <th className="px-4 py-3 md:px-5 md:py-4 w-[110px]">Date</th>
+                <th className="px-4 py-3 md:px-5 md:py-4 w-[80px]">Type</th>
+                <th className="px-4 py-3 md:px-5 md:py-4">Société</th>
+                <th className="px-4 py-3 md:px-5 md:py-4">Service</th>
+                <th className="px-4 py-3 md:px-5 md:py-4">Nom</th>
+                <th className="px-4 py-3 md:px-5 md:py-4">Prénom</th>
+                <th className="px-4 py-3 md:px-5 md:py-4 w-[220px]">Acompte</th>
+                <th className="px-4 py-3 md:px-5 md:py-4 w-[180px]">Restant (HT / TTC)</th>
+                <th className="px-4 py-3 md:px-5 md:py-4 w-[220px] text-right">Actions</th>
               </tr>
             </thead>
 
@@ -650,9 +650,9 @@ async function saveSignature() {
                       key={q.id}
                       className={`border-t align-top ${facturedQuoteIds.has(q.id) ? "bg-yellow-50" : ""}`}
                     >
-                      <td className="px-4 py-3 font-medium tabular-nums">{q.number}</td>
-                      <td className="px-4 py-3">{fmtDateFR(q.issueDate || q.createdAt)}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 md:px-5 md:py-4 font-medium tabular-nums">{q.number}</td>
+                      <td className="px-4 py-3 md:px-5 md:py-4">{fmtDateFR(q.issueDate || q.createdAt)}</td>
+                      <td className="px-4 py-3 md:px-5 md:py-4">
                         <span
                           className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium text-white ${
                             info.isPro ? "bg-emerald-600" : "bg-blue-600"
@@ -661,16 +661,16 @@ async function saveSignature() {
                           {info.isPro ? "PRO" : "PART"}
                         </span>
                       </td>
-                      <td className="px-4 py-3">{info.isPro ? info.societe || "—" : "—"}</td>
-                      <td className="px-4 py-3">{info.isPro ? info.service || "—" : "—"}</td>
-                      <td className="px-4 py-3">{info.lastName || "—"}</td>
-                      <td className="px-4 py-3">{info.firstName || "—"}</td>
+                      <td className="px-4 py-3 md:px-5 md:py-4">{info.isPro ? info.societe || "—" : "—"}</td>
+                      <td className="px-4 py-3 md:px-5 md:py-4">{info.isPro ? info.service || "—" : "—"}</td>
+                      <td className="px-4 py-3 md:px-5 md:py-4">{info.lastName || "—"}</td>
+                      <td className="px-4 py-3 md:px-5 md:py-4">{info.firstName || "—"}</td>
 
                       {/* Acompte : Payé Oui/Non + Montant */}
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 md:px-5 md:py-4">
                         <div className="flex items-center gap-2">
                           <select
-                            className={`rounded-lg border px-2 py-1 text-xs ${
+                            className={`rounded-lg border px-2 py-1 md:px-3 md:py-2 text-xs ${
                               lockDepositUI ? "bg-neutral-50 text-neutral-500 cursor-not-allowed" : ""
                             }`}
                             value={q.depositPaid ? "yes" : "no"}
@@ -712,7 +712,7 @@ async function saveSignature() {
                           </select>
 
                           <input
-                            className={`w-[110px] rounded-lg border px-2 py-1 text-xs tabular-nums ${
+                            className={`w-[110px] rounded-lg border px-2 py-1 md:px-3 md:py-2 text-xs tabular-nums ${
                               lockDepositUI ? "bg-neutral-50 text-neutral-500 cursor-not-allowed" : ""
                             }`}
                             value={centsToEurosStr(q.depositPaidAmount || q.depositHT || 0)}
@@ -746,7 +746,7 @@ async function saveSignature() {
                       </td>
 
                       {/* Restant HT / TTC */}
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 md:px-5 md:py-4">
                         <div className="text-xs tabular-nums">
                           <div>
                             HT : <span className="font-medium">{centsToEurosStr(computeRemainingHTCents(q))} €</span>
@@ -757,7 +757,7 @@ async function saveSignature() {
                         </div>
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 md:px-5 md:py-4">
                         <div className="flex items-center justify-end gap-2">
                           {isCompact && !isQuoteSigned(q.metaJson) && (
                             <button
@@ -843,11 +843,11 @@ async function saveSignature() {
   onTouchMove={(e) => e.preventDefault()}
 >
           <div className="w-full max-w-xl rounded-2xl bg-white shadow-xl overflow-hidden overscroll-contain">
-            <div className="flex items-center justify-between border-b px-4 py-3">
+            <div className="flex items-center justify-between border-b px-4 py-3 md:px-5 md:py-4">
               <div className="text-sm font-semibold">Signature du devis</div>
               <button
                 type="button"
-                className="rounded-lg border px-2 py-1 text-xs"
+                className="rounded-lg border px-2 py-1 md:px-3 md:py-2 text-xs"
                 onClick={() => {
                   setSignOpen(false);
                   setSignQuoteId("");
@@ -1519,7 +1519,7 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-neutral-500">Qté</span>
                     <input
-                      className="w-[90px] rounded-lg border px-2 py-1 text-sm tabular-nums"
+                      className="w-[90px] rounded-lg border px-2 py-1 md:px-3 md:py-2 text-sm tabular-nums"
                       type="number"
                       min={1}
                       step={1}
@@ -1673,8 +1673,7 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
           </div>
 
           <div className="rounded-xl border p-3">
-            <div className="text-neutral-7
-            00">Solde</div>
+            <div className="text-neutral-700">Solde</div>
             <div className="mt-1 text-lg font-semibold tabular-nums">{centsToEurosStr(computed.balanceHT)} €</div>
           </div>
         </div>

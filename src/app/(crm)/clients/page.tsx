@@ -225,8 +225,9 @@ export default function ClientsPage() {
         </div>
       </div>
 
-      <div className="w-full overflow-x-hidden rounded-xl border bg-white">
-        <table className="w-full table-fixed border-collapse text-sm">
+      <div className="w-full rounded-xl border bg-white">
+  <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
+    <table className="w-full min-w-[1500px] border-collapse text-[13px] md:text-[15px]">
           <thead className="bg-neutral-50 text-left">
             <tr>
               <th className="w-[6%] px-3 py-2">Pro</th>
@@ -295,9 +296,10 @@ export default function ClientsPage() {
                     </td>
 
                     {/* Société */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className={`w-full min-w-0 rounded border px-2 py-1 truncate ${!isPro ? blacked : ""}`}
+                        className={`w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
+ truncate ${!isPro ? blacked : ""}`}
                         value={c.societe}
                         placeholder={!isPro ? "—" : ""}
                         disabled={!isPro}
@@ -309,9 +311,10 @@ export default function ClientsPage() {
                     </td>
 
                     {/* Service */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className={`w-full min-w-0 rounded border px-2 py-1 truncate ${!isPro ? blacked : ""}`}
+                        className={`w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
+ truncate ${!isPro ? blacked : ""}`}
                         value={c.service}
                         placeholder={!isPro ? "—" : ""}
                         disabled={!isPro}
@@ -323,9 +326,11 @@ export default function ClientsPage() {
                     </td>
 
                     {/* SIRET */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className={`w-full min-w-0 rounded border px-2 py-1 truncate ${!isPro ? blacked : ""}`}
+                        className={`w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
+
+ truncate ${!isPro ? blacked : ""}`}
                         value={c.siret}
                         placeholder={!isPro ? "—" : "14 chiffres"}
                         disabled={!isPro}
@@ -337,9 +342,11 @@ export default function ClientsPage() {
                     </td>
 
                     {/* ✅ Prénom (interverti) */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 truncate"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
+
+ truncate"
                         value={c.firstName}
                         onChange={(e) =>
                           setClients((p) => p.map((x) => (x.id === c.id ? { ...x, firstName: e.target.value } : x)))
@@ -349,9 +356,11 @@ export default function ClientsPage() {
                     </td>
 
                     {/* ✅ Nom (interverti) */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 truncate"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
+
+ truncate"
                         value={c.lastName}
                         onChange={(e) =>
                           setClients((p) => p.map((x) => (x.id === c.id ? { ...x, lastName: e.target.value } : x)))
@@ -361,10 +370,12 @@ export default function ClientsPage() {
                     </td>
 
                     {/* Email */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
                         type="email"
-                        className="w-full min-w-0 rounded border px-2 py-1 truncate"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
+
+ truncate"
                         value={c.email}
                         onChange={(e) =>
                           setClients((p) => p.map((x) => (x.id === c.id ? { ...x, email: e.target.value } : x)))
@@ -374,9 +385,11 @@ export default function ClientsPage() {
                     </td>
 
                     {/* Téléphone */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 truncate"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
+
+ truncate"
                         value={c.telephone}
                         onChange={(e) =>
                           setClients((p) =>
@@ -388,10 +401,10 @@ export default function ClientsPage() {
                     </td>
 
                     {/* ✅ RUE (autocomplete) */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <div className="relative">
                         <input
-                          className="w-full min-w-0 rounded border px-2 py-1"
+                          className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2"
                           placeholder="Rue"
                           value={c.street}
                           onChange={(e) => void onStreetChange(c.id, e.target.value)}
@@ -420,9 +433,9 @@ export default function ClientsPage() {
                     </td>
 
                     {/* ✅ CP */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2"
                         placeholder="CP"
                         value={c.postalCode}
                         onChange={(e) =>
@@ -435,9 +448,9 @@ export default function ClientsPage() {
                     </td>
 
                     {/* ✅ VILLE */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2"
                         placeholder="Ville"
                         value={c.city}
                         onChange={(e) => setClients((p) => p.map((x) => (x.id === c.id ? { ...x, city: e.target.value } : x)))}
@@ -446,10 +459,11 @@ export default function ClientsPage() {
                     </td>
 
                     {/* ✅ Démarché le (FIGÉ) */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
                         type="date"
-                        className="w-full min-w-0 rounded border px-2 py-1 bg-neutral-50 text-neutral-700"
+                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
+ bg-neutral-50 text-neutral-700"
                         value={c.clientDepuisLe || ""}
                         disabled
                         readOnly
@@ -458,7 +472,7 @@ export default function ClientsPage() {
                     </td>
 
                     {/* ✅ Méthode (FIGÉE, en mots) */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <div className="text-xs text-neutral-800">
                         {methodLabel(c)}
                       </div>
@@ -468,9 +482,9 @@ export default function ClientsPage() {
                     </td>
 
                     {/* Notes */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <textarea
-                        className="w-full min-w-0 min-h-[72px] resize-none rounded border px-2 py-1"
+                        className="w-full min-w-0 min-h-[72px] resize-none rounded border px-2 py-1 md:px-3 md:py-2"
                         value={c.notes}
                         onChange={(e) =>
                           setClients((p) => p.map((x) => (x.id === c.id ? { ...x, notes: e.target.value } : x)))
@@ -481,7 +495,7 @@ export default function ClientsPage() {
                     </td>
 
                     {/* Actions */}
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 md:px-3 md:py-2">
                       <div className="flex flex-col items-end gap-2">
                         <button
                           onClick={() => {
@@ -509,6 +523,7 @@ export default function ClientsPage() {
             )}
           </tbody>
         </table>
+          </div>
 
         <div className="px-4 pb-4">
           <Pagination page={page} pageCount={pageCount} onPage={setPage} />
