@@ -594,34 +594,34 @@ setDrafts((prev) => ({
                     <td className="px-2 py-1 md:px-3 md:py-2
 ">
                       <input
-                        type="email"
-                        className="w-full rounded border px-3 py-3 text-base"
-                        defaultValue={p.email}
-                        onBlur={async (e) => {
-                          const v = e.target.value;
-                          setProspects((prev) =>
-                            prev.map((x) =>
-                              x.id === p.id ? { ...x, email: v } : x
-                            )
-                          );
-                          await apiPatchProspect(p.id, { email: v });
-                        }}
-                      />
+  type="email"
+  className="w-full rounded border px-3 py-3 text-base"
+  value={p.email ?? ""}
+  onChange={(e) => {
+    const v = e.target.value;
+    setProspects((prev) => prev.map((x) => (x.id === p.id ? { ...x, email: v } : x)));
+  }}
+  onBlur={async () => {
+    const v = (p.email ?? "").trim();
+    await apiPatchProspect(p.id, { email: v });
+  }}
+/>
                     </td>
 
                     {/* TÉL */}
                     <td className="px-2 py-1 md:px-3 md:py-2
 ">
-                      <input
+                     <input
   inputMode="tel"
   maxLength={20}
   className="w-full min-w-[220px] rounded border px-3 py-3 text-base tabular-nums"
-  defaultValue={p.telephone}
-  onBlur={async (e) => {
+  value={p.telephone ?? ""}
+  onChange={(e) => {
     const v = normalizeSpaces(e.target.value).slice(0, 20);
-    setProspects((prev) =>
-      prev.map((x) => (x.id === p.id ? { ...x, telephone: v } : x))
-    );
+    setProspects((prev) => prev.map((x) => (x.id === p.id ? { ...x, telephone: v } : x)));
+  }}
+  onBlur={async () => {
+    const v = normalizeSpaces(p.telephone ?? "").slice(0, 20);
     await apiPatchProspect(p.id, { telephone: v });
   }}
 />
@@ -726,19 +726,18 @@ setDrafts((prev) => ({
                     {/* DÉMARCHÉ LE */}
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        type="date"
-                        className="w-full rounded border px-3 py-3 text-base"
-                        defaultValue={p.demarcheLe}
-                        onBlur={async (e) => {
-                          const v = e.target.value;
-                          setProspects((prev) =>
-                            prev.map((x) =>
-                              x.id === p.id ? { ...x, demarcheLe: v } : x
-                            )
-                          );
-                          await apiPatchProspect(p.id, { demarcheLe: v });
-                        }}
-                      />
+  type="date"
+  className="w-full rounded border px-3 py-3 text-base"
+  value={p.demarcheLe ?? ""}
+  onChange={(e) => {
+    const v = e.target.value;
+    setProspects((prev) => prev.map((x) => (x.id === p.id ? { ...x, demarcheLe: v } : x)));
+  }}
+  onBlur={async () => {
+    const v = (p.demarcheLe ?? "").trim();
+    await apiPatchProspect(p.id, { demarcheLe: v });
+  }}
+/>
                     </td>
 
                     {/* MÉTHODE */}
@@ -752,14 +751,16 @@ setDrafts((prev) => ({
   <input
     type="checkbox"
     className="h-6 w-6"
-    defaultChecked={p.methode[m]}
+    checked={Boolean(p.methode?.[m])}
     onChange={async (e) => {
-      const next = { ...p.methode, [m]: e.target.checked };
-      setProspects((prev) =>
-        prev.map((x) => (x.id === p.id ? { ...x, methode: next } : x))
-      );
-      await apiPatchProspect(p.id, { methode: next });
-    }}
+  const next = { ...(p.methode ?? { physique: false, appel: false, mail: false }), [m]: e.target.checked };
+
+  // UI immédiate (sinon tu vois pas la vraie valeur)
+  setProspects((prev) => prev.map((x) => (x.id === p.id ? { ...x, methode: next } : x)));
+
+  // DB immédiate (sinon conversion peut partir avec l'ancienne valeur)
+  await apiPatchProspect(p.id, { methode: next });
+}}
   />
   <span className="text-base capitalize select-none">
     {m === "mail" ? "Email" : m}
