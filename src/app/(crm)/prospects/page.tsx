@@ -201,11 +201,7 @@ function initDraftFromProspect(p: Prospect): RowDraft {
   const { lastName, firstName } = splitContact(p.contact);
   const { street, postalCode, city } = splitAdresse(p.adresse);
 
-  const isPro = Boolean(
-    normalizeSpaces(p.societe) ||
-      normalizeSpaces(p.service) ||
-      normalizeSpaces((p as any).siret)
-  );
+    const isPro = true; // ✅ par défaut : tout nouveau prospect est PRO
 
   return {
     isPro,
@@ -339,11 +335,11 @@ export default function ProspectsPage() {
               const created = await apiCreateProspect();
               setProspects((prev) => [created, ...prev]);
               setDrafts((prev) => ({
-                ...prev,
-                [created.id]: initDraftFromProspect(created),
-              }));
+  ...prev,
+  [created.id]: { ...initDraftFromProspect(created), isPro: true },
+}));
 
-              const nextCount = prospects.length + 1;
+              const nextCount = (prospects?.length ?? 0) + 1;
               const nextPageCount = Math.max(
                 1,
                 Math.ceil(nextCount / PAGE_SIZE)
@@ -464,7 +460,7 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       {showPro ? (
                         <input
-                          className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
+                          className="w-full rounded border px-3 py-3 text-base"
                           value={d.societe}
                           onChange={(e) =>
                             updateDraft(p.id, { societe: e.target.value })
@@ -488,7 +484,7 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       {showPro ? (
                         <input
-                          className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
+                          className="w-full rounded border px-3 py-3 text-base"
                           value={d.service}
                           onChange={(e) =>
                             updateDraft(p.id, { service: e.target.value })
@@ -512,28 +508,26 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       {showPro ? (
                         <input
-                          className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
-                          placeholder="14 chiffres"
-                          value={d.siret}
-                          onChange={(e) =>
-                            updateDraft(p.id, { siret: e.target.value })
-                          }
-                          onBlur={async () => {
-                            const v = normalizeSpaces(d.siret);
+  inputMode="numeric"
+  pattern="[0-9]*"
+  maxLength={14}
+  className="w-full min-w-[200px] rounded border px-3 py-3 text-base tabular-nums"
+  placeholder="SIRET (14 chiffres)"
+  value={d.siret}
+  onChange={(e) => {
+    const v = e.target.value.replace(/\D+/g, "").slice(0, 14);
+    updateDraft(p.id, { siret: v });
+  }}
+  onBlur={async () => {
+    const v = normalizeSpaces(d.siret);
 
-                            // on met aussi à jour l’état local (même si l’API ne persiste pas)
-                            setProspects((prev) =>
-                              prev.map((x) =>
-                                x.id === p.id
-                                  ? ({ ...x, siret: v } as any)
-                                  : x
-                              )
-                            );
+    setProspects((prev) =>
+      prev.map((x) => (x.id === p.id ? ({ ...x, siret: v } as any) : x))
+    );
 
-                            // tentative backend (si supporté)
-                            await apiPatchProspect(p.id, { siret: v });
-                          }}
-                        />
+    await apiPatchProspect(p.id, { siret: v });
+  }}
+/>
                       ) : (
                         <div className="select-none text-neutral-300">—</div>
                       )}
@@ -543,7 +537,7 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2 
 ">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
+                        className="w-full rounded border px-3 py-3 text-base"
                         value={d.firstName}
                         onChange={(e) =>
                           updateDraft(p.id, { firstName: e.target.value })
@@ -567,7 +561,7 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2
 ">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
+                        className="w-full rounded border px-3 py-3 text-base"
                         value={d.lastName}
                         onChange={(e) =>
                           updateDraft(p.id, { lastName: e.target.value })
@@ -592,7 +586,7 @@ export default function ProspectsPage() {
 ">
                       <input
                         type="email"
-                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
+                        className="w-full rounded border px-3 py-3 text-base"
                         defaultValue={p.email}
                         onBlur={async (e) => {
                           const v = e.target.value;
@@ -610,18 +604,18 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2
 ">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
-                        defaultValue={p.telephone}
-                        onBlur={async (e) => {
-                          const v = e.target.value;
-                          setProspects((prev) =>
-                            prev.map((x) =>
-                              x.id === p.id ? { ...x, telephone: v } : x
-                            )
-                          );
-                          await apiPatchProspect(p.id, { telephone: v });
-                        }}
-                      />
+  inputMode="tel"
+  maxLength={20}
+  className="w-full min-w-[220px] rounded border px-3 py-3 text-base tabular-nums"
+  defaultValue={p.telephone}
+  onBlur={async (e) => {
+    const v = normalizeSpaces(e.target.value).slice(0, 20);
+    setProspects((prev) =>
+      prev.map((x) => (x.id === p.id ? { ...x, telephone: v } : x))
+    );
+    await apiPatchProspect(p.id, { telephone: v });
+  }}
+/>
                     </td>
 
                     {/* ✅ RUE (autocomplete) */}
@@ -629,8 +623,7 @@ export default function ProspectsPage() {
 ">
                       <div className="relative">
                         <input
-                          className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2
-"
+                          className="w-full rounded border px-3 py-3 text-base"
                           placeholder="Rue"
                           value={d.street}
                           onChange={(e) => void onStreetChange(p.id, e.target.value)}
@@ -675,8 +668,7 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2
 ">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2
-"
+                        className="w-full rounded border px-3 py-3 text-base"
                         placeholder="CP"
                         value={d.postalCode}
                         onChange={(e) =>
@@ -702,7 +694,7 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2
 ">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2"
+                        className="w-full rounded border px-3 py-3 text-base"
                         placeholder="Ville"
                         value={d.city}
                         onChange={(e) => updateDraft(p.id, { city: e.target.value })}
@@ -726,7 +718,7 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
                         type="date"
-                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2"
+                        className="w-full rounded border px-3 py-3 text-base"
                         defaultValue={p.demarcheLe}
                         onBlur={async (e) => {
                           const v = e.target.value;
@@ -744,22 +736,26 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <div className="flex flex-wrap gap-x-3 gap-y-1">
                         {(["physique", "appel", "mail"] as const).map((m) => (
-                          <label key={m} className="inline-flex items-center gap-1">
-                            <input
-                              type="checkbox"
-                              defaultChecked={p.methode[m]}
-                              onChange={async (e) => {
-                                const next = { ...p.methode, [m]: e.target.checked };
-                                setProspects((prev) =>
-                                  prev.map((x) =>
-                                    x.id === p.id ? { ...x, methode: next } : x
-                                  )
-                                );
-                                await apiPatchProspect(p.id, { methode: next });
-                              }}
-                            />
-                            <span className="text-xs capitalize">{m}</span>
-                          </label>
+                          <label
+  key={m}
+  className="inline-flex items-center gap-2 rounded-md border px-3 py-2 hover:bg-neutral-50 active:bg-neutral-100"
+>
+  <input
+    type="checkbox"
+    className="h-6 w-6"
+    defaultChecked={p.methode[m]}
+    onChange={async (e) => {
+      const next = { ...p.methode, [m]: e.target.checked };
+      setProspects((prev) =>
+        prev.map((x) => (x.id === p.id ? { ...x, methode: next } : x))
+      );
+      await apiPatchProspect(p.id, { methode: next });
+    }}
+  />
+  <span className="text-base capitalize select-none">
+    {m === "mail" ? "Email" : m}
+  </span>
+</label>
                         ))}
                       </div>
                     </td>

@@ -105,17 +105,13 @@ type PosterParsed = {
 function parsePosterLabel(labelRaw: string) {
   const label = normalizeSpaces(labelRaw);
 
-  // On garde uniquement les lignes "poster"
-  if (!/poster/i.test(label)) return null;
+  // ✅ On détecte un poster via sa référence (R-XXXXXX), PAS via le mot "poster"
+  const refM = label.match(/\bR-\d{3,}\b/i);
+  if (!refM) return null;
 
-  // ref: "R-000123" (tolérant)
-  const refMatch =
-    label.match(/\bR-\d{3,}\b/i) || label.match(/Poster\s+([A-Za-z0-9-]+)\b/i);
-  const ref = normalizeSpaces(
-    refMatch?.[0]?.toUpperCase().replace(/^POSTER\s+/i, "") || ""
-  );
+  const ref = normalizeSpaces(refM[0].toUpperCase());
 
-  // format
+  // ✅ format (A2/A3/30×40)
   let format = "";
   const fmtMatch =
     label.match(/\bA2\b/i) ||
@@ -125,23 +121,35 @@ function parsePosterLabel(labelRaw: string) {
 
   if (fmtMatch) {
     format = normalizeSpaces(fmtMatch[0].toUpperCase().replace(/\s*/g, ""));
-    // harmonise "30X40" -> "30×40"
     format = format.replace("30X40", "30×40");
   }
 
-  // noms JP / FR : on cherche "… / …"
-  // ex: "静かな翼 / Shizuka no Tsubasa"
+  // ✅ noms JP/FR : on cherche "JP / FR"
+  // (on reste robuste : si pas de "/", on met tout en FR)
   let jp = "";
   let fr = "";
 
-  const slash = label
-    .split("/")
-    .map((x) => normalizeSpaces(x))
-    .filter(Boolean);
-  if (slash.length >= 2) {
-    jp = slash[0].replace(/^Poster\s+/i, "").replace(ref, "").trim();
-    fr = slash.slice(1).join(" / ").trim();
+  // On enlève d’abord la ref et le format pour isoler le "nom"
+  let rest = label;
+  rest = rest.replace(refM[0], " ");
+  if (fmtMatch?.[0]) rest = rest.replace(fmtMatch[0], " ");
+  rest = normalizeSpaces(rest);
+
+  // 1) si jamais tu as "JP / FR" -> on garde
+const partsSlash = rest.split("/").map((x) => normalizeSpaces(x)).filter(Boolean);
+if (partsSlash.length >= 2) {
+  jp = partsSlash[0];
+  fr = partsSlash.slice(1).join(" / ");
+} else {
+  // 2) ton format réel : "NomLatin — TraductionFR"
+  const partsDash = rest.split("—").map((x) => normalizeSpaces(x)).filter(Boolean);
+  if (partsDash.length >= 2) {
+    jp = partsDash[0]; // Nom latin
+    fr = partsDash.slice(1).join(" — "); // Traduction FR (ou reste)
+  } else {
+    fr = rest || "";
   }
+}
 
   jp = normalizeSpaces(jp);
   fr = normalizeSpaces(fr);
@@ -149,13 +157,19 @@ function parsePosterLabel(labelRaw: string) {
   return { ref, jp, fr, format };
 }
 
+function escHtml(s: any) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function buildPosterBlock(items: { label: string; qty: number }[]) {
   const posters: PosterParsed[] = [];
 
   for (const it of items) {
-    const label = String(it.label || "");
-    const qty = Number(it.qty || 0);
-    const parsed = parsePosterLabel(label);
+    const parsed = parsePosterLabel(String(it.label || ""));
     if (!parsed) continue;
 
     posters.push({
@@ -163,7 +177,7 @@ function buildPosterBlock(items: { label: string; qty: number }[]) {
       jp: parsed.jp || "—",
       fr: parsed.fr || "—",
       format: parsed.format || "—",
-      qty: qty > 0 ? qty : 0,
+      qty: Math.max(0, Number(it.qty || 0)),
     });
   }
 
@@ -174,22 +188,57 @@ function buildPosterBlock(items: { label: string; qty: number }[]) {
     };
   }
 
-  // bloc aligné (monospace)
-  const refW = Math.max(6, ...posters.map((p) => p.ref.length));
-  const fmtW = Math.max(2, ...posters.map((p) => p.format.length));
-  const qtyW = Math.max(1, ...posters.map((p) => String(p.qty).length));
+  // tri stable : ref puis format
+  posters.sort((a, b) => (a.ref + a.format).localeCompare(b.ref + b.format));
 
-  const lines = posters.map((p) => {
-    const ref = p.ref.padEnd(refW, " ");
-    const name = `${p.jp} / ${p.fr}`;
-    const fmt = p.format.padEnd(fmtW, " ");
-    const qty = String(p.qty).padStart(qtyW, " ");
-    return `${ref}  ${fmt}  x${qty}  ${name}`;
-  });
+  // ✅ TEXT : tableau lisible (monospace)
+  const refW = Math.max(7, ...posters.map((p) => p.ref.length));
+  const fmtW = Math.max(4, ...posters.map((p) => p.format.length));
+  const qtyW = Math.max(3, ...posters.map((p) => String(p.qty).length));
 
-  const html = `<pre style="margin:8px 0;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;background:#fafafa;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;font-size:12px;line-height:1.45;white-space:pre-wrap">${lines
-    .map((l) => l.replace(/</g, "&lt;").replace(/>/g, "&gt;"))
-    .join("\n")}</pre>`;
+  const header = `${"Réf".padEnd(refW)}  ${"Fmt".padEnd(fmtW)}  ${"Qté".padStart(qtyW)}  Nom JP / Nom FR`;
+  const sep = `${"".padEnd(refW, "-")}  ${"".padEnd(fmtW, "-")}  ${"".padEnd(qtyW, "-")}  ------------------`;
+
+  const lines = [
+    header,
+    sep,
+    ...posters.map((p) => {
+      const name = `${p.jp || "—"} / ${p.fr || "—"}`;
+      return `${p.ref.padEnd(refW)}  ${p.format.padEnd(fmtW)}  ${String(p.qty).padStart(qtyW)}  ${name}`;
+    }),
+  ];
+
+  // ✅ HTML : vrai tableau (ce que tu demandes)
+  const rowsHtml = posters
+    .map(
+      (p) => `
+      <tr>
+        <td style="padding:8px 10px;border:1px solid #e5e7eb;white-space:nowrap;">${escHtml(p.ref)}</td>
+        <td style="padding:8px 10px;border:1px solid #e5e7eb;white-space:nowrap;">${escHtml(p.format)}</td>
+        <td style="padding:8px 10px;border:1px solid #e5e7eb;text-align:right;white-space:nowrap;">${escHtml(p.qty)}</td>
+        <td style="padding:8px 10px;border:1px solid #e5e7eb;">${escHtml(p.jp)}</td>
+        <td style="padding:8px 10px;border:1px solid #e5e7eb;">${escHtml(p.fr)}</td>
+      </tr>
+    `
+    )
+    .join("");
+
+  const html = `
+    <table style="border-collapse:collapse;width:100%;margin:8px 0;font-size:13px;">
+      <thead>
+        <tr>
+          <th style="padding:8px 10px;border:1px solid #e5e7eb;background:#fafafa;text-align:left;">Référence</th>
+          <th style="padding:8px 10px;border:1px solid #e5e7eb;background:#fafafa;text-align:left;">Format</th>
+          <th style="padding:8px 10px;border:1px solid #e5e7eb;background:#fafafa;text-align:right;">Quantité</th>
+          <th style="padding:8px 10px;border:1px solid #e5e7eb;background:#fafafa;text-align:left;">Nom (JP)</th>
+          <th style="padding:8px 10px;border:1px solid #e5e7eb;background:#fafafa;text-align:left;">Nom (FR)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    </table>
+  `;
 
   return { textLines: lines, html };
 }
@@ -222,6 +271,15 @@ function buildTransporter() {
 function getFromAddress() {
   // par défaut : ton adresse
   return process.env.SMTP_FROM || "SEIKAN GALLERY <seikan.gallery@gmail.com>";
+}
+
+function addDays(d: Date | string | null | undefined, days: number) {
+  if (!d) return null;
+  const dt = typeof d === "string" ? new Date(d) : d;
+  if (Number.isNaN(dt.getTime())) return null;
+  const out = new Date(dt.getTime());
+  out.setDate(out.getDate() + days);
+  return out;
 }
 
 export async function POST(
@@ -295,38 +353,64 @@ export async function POST(
 
     // Date livraison (reprend même source que la facture : meta devis embarquée)
     const deliveryDate = normalizeSpaces(
-      quoteMeta?.delivery?.date || quoteMeta?.deliveryDate || ""
-    );
+  quoteMeta?.delivery?.address ||
+    quoteMeta?.posters?.deliveryWindowLabel ||
+    quoteMeta?.posters?.delivery?.address ||
+    quoteMeta?.shipping?.deliveryWindowLabel ||
+    ""
+);
 
     // Paiement
     const deferredPayment = Boolean(quoteMeta?.posters?.deferredPayment);
 
-    // Dates limites (on essaye plusieurs clés possibles + fallback dueAt)
-    const dueAt = (inv as any).dueAt ?? null;
+    // Dates limites (source de vérité : clôture + signature)
+const dueAt = (inv as any).dueAt ?? null;
 
-    // comptant: date limite totale
-    const payTotalUntil =
-      quoteMeta?.posters?.payTotalUntil ||
-      quoteMeta?.posters?.totalUntil ||
-      quoteMeta?.posters?.dueTotalUntil ||
-      dueAt ||
-      null;
+// helpers dates (local)
+function parseIsoDateOnlyLocal(s: any): Date | null {
+  const raw = String(s ?? "").trim();
+  if (!raw) return null;
+  const d = new Date(raw + "T00:00:00");
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function addDaysLocal(d: Date, days: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + days);
+  return x;
+}
 
-    // différé: dates acompte + restant
-    const payDepositUntil =
-      quoteMeta?.posters?.payDepositUntil ||
-      quoteMeta?.posters?.depositUntil ||
-      quoteMeta?.posters?.dueDepositUntil ||
-      (inv as any).depositDueAt ||
-      null;
+const baseDate: Date | null = (() => {
+  const d = (inv as any).issuedAt ?? (inv as any).createdAt ?? null;
+  if (!d) return null;
+  const dt = typeof d === "string" ? new Date(d) : d;
+  return Number.isNaN(dt.getTime()) ? null : dt;
+})();
 
-    const payBalanceUntil =
-      quoteMeta?.posters?.payBalanceUntil ||
-      quoteMeta?.posters?.balanceUntil ||
-      quoteMeta?.posters?.dueBalanceUntil ||
-      (inv as any).balanceDueAt ||
-      dueAt ||
-      null;
+// source de vérité chez toi : clôture + signature
+const closingDateIso = quoteMeta?.posters?.closingDate || "";
+const closingDate = parseIsoDateOnlyLocal(closingDateIso);
+
+const signedAt = (() => {
+  const s = quoteMeta?.signature?.signedAt;
+  if (!s) return null;
+  const d = new Date(String(s));
+  return Number.isNaN(d.getTime()) ? null : d;
+})();
+
+// “avant le” = clôture - 2 jours
+const payBefore = closingDate ? addDaysLocal(closingDate, -2) : null;
+
+// solde = (signature si dispo sinon baseDate) + 30 jours
+const balanceBase = signedAt || baseDate;
+const balanceDue = balanceBase ? addDaysLocal(balanceBase, 30) : null;
+
+// comptant: total avant clôture-2 (sinon fallback)
+const payTotalUntil = payBefore || (baseDate ? addDaysLocal(baseDate, 7) : dueAt || null);
+
+// différé: acompte avant clôture-2, solde avant balanceDue (sinon fallback)
+const payDepositUntil = payBefore || (baseDate ? addDaysLocal(baseDate, 7) : null);
+const payBalanceUntil = balanceDue || dueAt || (baseDate ? addDaysLocal(baseDate, 30) : null);
+
 
     // PDF buffers via tes routes exports (on réutilise tes générateurs existants)
     const origin = new URL(req.url).origin;
@@ -433,6 +517,11 @@ export async function POST(
       ``,
       paymentLineText,
       ``,
+`Nous vous remercions encore une fois pour votre confiance et restons à votre entière disposition pour toute question ou information complémentaire.`,
+`N'hésitez pas à nous contacter si vous avez besoin de précisions sur votre commande ou sur les modalités de paiement.`,
+``,
+`Nous vous souhaitons une excellente journée et à très bientôt pour la livraison de vos posters.`,
+``,
       `Cordialement,`,
       `Xavier CUZIN`,
       `SEIKAN GALLERY`,
@@ -458,7 +547,7 @@ export async function POST(
     <br/>
     <div>${thanksLine}</div>
     <br/>
-    <div>Nous vous confirmons avoir bien reçu votre demande et nous avons le plaisir de vous envoyer, en pièces jointes, les documents relatifs à votre commande.</div>
+    <div>Nous vous confirmons avoir bien reçu votre demande et nous avons le plaisir de vous envoyer, en pièces jointes, les documents relatifs à votre commande :</div>
     <br/>
     <div>${
       quoteNumber
@@ -478,10 +567,15 @@ export async function POST(
     <div>Date de livraison estimée : ${deliveryDate || "—"}</div>
     <div>Montant total de la commande : ${centsToEurosStr(totalHT)} €</div>
     <br/>
-    <div>${paymentLineHtml}</div>
-    <br/>
-    <div>Cordialement,</div>
-    <div><strong>Xavier CUZIN</strong></div>
+<div>${paymentLineHtml}</div>
+<br/>
+<div>Nous vous remercions encore une fois pour votre confiance et restons à votre entière disposition pour toute question ou information complémentaire.</div>
+<div>N'hésitez pas à nous contacter si vous avez besoin de précisions sur votre commande ou sur les modalités de paiement.</div>
+<br/>
+<div>Nous vous souhaitons une excellente journée et à très bientôt pour la livraison de vos posters.</div>
+<br/>
+<div>Cordialement,</div>
+<div>Xavier CUZIN</div>
     <div>SEIKAN GALLERY</div>
     <div>seikan.gallery@gmail.com</div>
     <div>06.10.38.02.08</div>
