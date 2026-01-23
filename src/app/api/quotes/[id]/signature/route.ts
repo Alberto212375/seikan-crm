@@ -53,7 +53,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
     const signerFirstName = normalize(body?.signerFirstName);
     const signerLastName = normalize(body?.signerLastName);
-    const signerRole = normalize(body?.signerRole);
+        const signerRole = normalize(body?.signerRole) || "Gérant";
 
     const accepted = Boolean(body?.accepted);
     const signatureDataUrl = normalize(body?.signatureDataUrl);

@@ -360,30 +360,31 @@ export default function ProspectsPage() {
 
       <div className="w-full rounded-xl border bg-white">
   <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-    <table className="min-w-[1400px] w-full border-collapse text-[15px] md:text-sm">
+    <table className="min-w-[2200px] w-full table-auto border-collapse text-base">
           <thead className="bg-neutral-50 text-left">
             <tr>
-              <th className="w-[6%] px-3 py-2">Pro</th>
-              <th className="w-[12%] px-3 py-2">Société</th>
-              <th className="w-[10%] px-3 py-2">Service</th>
-              <th className="w-[10%] px-3 py-2">SIRET</th>
+  <th className="min-w-[90px] px-3 py-3">Pro</th>
 
-              {/* ✅ inversion affichage : Prénom puis Nom */}
-              <th className="w-[10%] px-3 py-2">Prénom</th>
-              <th className="w-[10%] px-3 py-2">Nom</th>
+  <th className="min-w-[260px] px-3 py-3">Société</th>
+  <th className="min-w-[220px] px-3 py-3">Service</th>
+  <th className="min-w-[180px] px-3 py-3">SIRET</th>
 
-              <th className="w-[12%] px-3 py-2">Email</th>
-              <th className="w-[10%] px-3 py-2">Téléphone</th>
+  <th className="min-w-[200px] px-3 py-3">Prénom</th>
+  <th className="min-w-[200px] px-3 py-3">Nom</th>
 
-              {/* ✅ Adresse décomposée */}
-              <th className="w-[14%] px-3 py-2">Rue</th>
-              <th className="w-[6%] px-3 py-2">CP</th>
-              <th className="w-[10%] px-3 py-2">Ville</th>
+  <th className="min-w-[300px] px-3 py-3">Email</th>
+  <th className="min-w-[200px] px-3 py-3">Téléphone</th>
 
-              <th className="w-[10%] px-3 py-2">Démarché le</th>
-              <th className="w-[10%] px-3 py-2">Méthode</th>
-              <th className="w-[6%] px-3 py-2 text-right">Actions</th>
-            </tr>
+  <th className="min-w-[420px] px-3 py-3">Rue</th>
+  <th className="min-w-[120px] px-3 py-3">CP</th>
+  <th className="min-w-[220px] px-3 py-3">Ville</th>
+
+  <th className="min-w-[170px] px-3 py-3">Démarché le</th>
+  <th className="min-w-[220px] px-3 py-3">Méthode</th>
+
+  <th className="min-w-[140px] px-3 py-3 text-right">Actions</th>
+</tr>
+
           </thead>
 
           <tbody>
@@ -652,14 +653,14 @@ export default function ProspectsPage() {
                         {openSuggestFor === p.id &&
                           (suggestions[p.id]?.length ?? 0) > 0 && (
                             <div
-                              className="absolute z-50 mt-1 w-full overflow-hidden rounded-md border bg-white shadow-lg"
+                              className="absolute left-0 z-50 mt-1 min-w-[520px] max-w-[80vw] overflow-hidden rounded-md border bg-white shadow-lg"
                               onMouseDown={(e) => e.preventDefault()}
                             >
                               {suggestions[p.id].map((s, idx) => (
                                 <button
                                   key={`${s.label}-${idx}`}
                                   type="button"
-                                  className="block w-full px-3 py-2 text-left text-sm hover:bg-neutral-50"
+                                  className="block w-full px-4 py-3 text-left text-base hover:bg-neutral-50"
                                   onClick={() => selectSuggestion(p.id, s)}
                                 >
                                   {s.label}

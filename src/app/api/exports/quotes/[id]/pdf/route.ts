@@ -488,7 +488,7 @@ et la livraison pourra être reportée à la clôture de commande suivante.`;
     ? `${String(signature?.signerFirstName ?? "").trim()} ${String(signature?.signerLastName ?? "").trim()}`.trim()
     : "";
 
-  const signerRole = signedOk ? String(signature?.signerRole ?? "").trim() : "";
+   const signerRole = signedOk ? (String(signature?.signerRole ?? "").trim() || "Gérant") : "";
 
   const legalSignedBefore = `${paiementHeader ? paiementHeader + "\n" : ""}IBAN : ${iban}
 BIC : ${bic}

@@ -401,7 +401,7 @@ function QuoteList({
   const [signQuoteId, setSignQuoteId] = useState<string>("");
   const [signerFirstName, setSignerFirstName] = useState("");
   const [signerLastName, setSignerLastName] = useState("");
-  const [signerRole, setSignerRole] = useState("");
+  const [signerRole, setSignerRole] = useState("Gérant");
   const [bonPourAccord, setBonPourAccord] = useState(false);
   const [signSaving, setSignSaving] = useState(false);
 
