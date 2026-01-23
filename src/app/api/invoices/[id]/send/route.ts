@@ -471,115 +471,155 @@ const payBalanceUntil = balanceDue || dueAt || (baseDate ? addDaysLocal(baseDate
         : 0);
 
     const subjectRef = quoteNumber || invoiceNumber;
-    const subject = `Confirmation de votre commande et envoi du devis et de la facture – ${subjectRef}`;
+const subject = `Confirmation de votre commande et envoi du devis et de la facture – ${subjectRef}`;
 
-    const helloLine = `Bonjour Madame, Monsieur, ${clientPersonName},`;
+// ✅ Salutation sur 2 lignes comme tu veux
+const helloHtml = `Bonjour Madame, Monsieur,<br/><strong>${escHtml(clientPersonName)}</strong>,`;
+const helloText = `Bonjour Madame, Monsieur,\n${clientPersonName},`;
 
-    const thanksLine =
-      isPro && companyName
-        ? `Nous remercions sincèrement votre entreprise ${companyName} pour sa commande de posters.`
-        : `Nous vous remercions sincèrement pour votre commande de posters.`;
+// ✅ Phrase merci (on garde ta logique PRO / non PRO)
+const thanksLine =
+  isPro && companyName
+    ? `Nous vous remercions sincèrement pour votre commande de posters passée auprès de notre entreprise ${companyName}.`
+    : `Nous vous remercions sincèrement pour votre commande de posters.`;
 
-    const paymentLineText = deferredPayment
-      ? `Mode de paiement : Virement bancaire / Délai de paiement acompte autorisé jusqu'au ${fmtDateFRShort(
-          payDepositUntil
-        )} / Délai de paiement restant autorisé jusqu'au ${fmtDateFRShort(
-          payBalanceUntil
-        )}`
-      : `Mode de paiement : Virement bancaire / Délai de paiement total autorisé jusqu'au ${fmtDateFRShort(
-          payTotalUntil
-        )}`;
+// ✅ Lignes paiement séparées (au lieu d’un seul bloc “/”)
+const paymentModeText = `Mode de paiement : Virement bancaire`;
 
-    const bodyText = [
-      helloLine,
-      ``,
-      thanksLine,
-      ``,
-      `Nous vous confirmons avoir bien reçu votre demande et nous avons le plaisir de vous envoyer, en pièces jointes, les documents relatifs à votre commande.`,
-      ``,
-      quoteNumber
-        ? `Le devis signé daté du ${fmtDateFR(
-            (inv as any).quote?.updatedAt ?? (inv as any).quote?.createdAt
-          )}`
-        : `Le devis (pièce jointe)`,
-      ``,
-      `La facture correspondant à votre commande, pour un montant total de ${centsToEurosStr(
-        totalHT
-      )} €`,
-      ``,
-      `Les références des posters commandés :`,
-      ``,
-      ...posters.textLines,
-      ``,
-      `Détails importants concernant votre commande :`,
-      `Date de livraison estimée : ${deliveryDate || "—"}`,
-      `Montant total de la commande : ${centsToEurosStr(totalHT)} €`,
-      ``,
-      paymentLineText,
-      ``,
-`Nous vous remercions encore une fois pour votre confiance et restons à votre entière disposition pour toute question ou information complémentaire.`,
-`N'hésitez pas à nous contacter si vous avez besoin de précisions sur votre commande ou sur les modalités de paiement.`,
-``,
-`Nous vous souhaitons une excellente journée et à très bientôt pour la livraison de vos posters.`,
-``,
-      `Cordialement,`,
-      `Xavier CUZIN`,
-      `SEIKAN GALLERY`,
-      `seikan.gallery@gmail.com`,
-      `06.10.38.02.08`,
-      ``,
-    ].join("\n");
+const paymentDeadlineText = deferredPayment
+  ? `Délai de paiement acompte autorisé jusqu'au ${fmtDateFRShort(payDepositUntil)}\nDélai de paiement restant autorisé jusqu'au ${fmtDateFRShort(payBalanceUntil)}`
+  : `Délai de paiement total autorisé jusqu'au ${fmtDateFRShort(payTotalUntil)}`;
 
-    // HTML (pour gras + bloc aligné)
-    const paymentLineHtml = deferredPayment
-      ? `Mode de paiement : Virement bancaire / Délai de paiement <strong>acompte</strong> autorisé jusqu'au ${fmtDateFRShort(
-          payDepositUntil
-        )} / Délai de paiement <strong>restant</strong> autorisé jusqu'au ${fmtDateFRShort(
-          payBalanceUntil
-        )}`
-      : `Mode de paiement : Virement bancaire / Délai de paiement total autorisé jusqu'au ${fmtDateFRShort(
-          payTotalUntil
-        )}`;
+const paymentModeHtml = `<strong>Mode de paiement :</strong> <strong>Virement bancaire</strong>`;
+const paymentDeadlineHtml = deferredPayment
+  ? `<strong>Délai de paiement acompte autorisé</strong> jusqu'au <strong>${fmtDateFRShort(
+      payDepositUntil
+    )}</strong><br/><strong>Délai de paiement restant autorisé</strong> jusqu'au <strong>${fmtDateFRShort(
+      payBalanceUntil
+    )}</strong>`
+  : `<strong>Délai de paiement total autorisé</strong> jusqu'au <strong>${fmtDateFRShort(
+      payTotalUntil
+    )}</strong>`;
 
-    const bodyHtml = `
-  <div style="font-family: Arial, Helvetica, sans-serif; font-size:14px; color:#111;">
-    <div>${helloLine}</div>
-    <br/>
-    <div>${thanksLine}</div>
-    <br/>
-    <div>Nous vous confirmons avoir bien reçu votre demande et nous avons le plaisir de vous envoyer, en pièces jointes, les documents relatifs à votre commande :</div>
-    <br/>
-    <div>${
-      quoteNumber
-        ? `Le devis signé daté du ${fmtDateFR(
-            (inv as any).quote?.updatedAt ?? (inv as any).quote?.createdAt
-          )}`
-        : `Le devis (pièce jointe)`
-    }</div>
-    <br/>
-    <div>La facture correspondant à votre commande, pour un montant total de <strong>${centsToEurosStr(
-      totalHT
-    )} €</strong></div>
-    <br/>
-    <div><strong>Les références des posters commandés :</strong></div>
-    ${posters.html}
-    <div><strong>Détails importants concernant votre commande :</strong></div>
-    <div>Date de livraison estimée : ${deliveryDate || "—"}</div>
-    <div>Montant total de la commande : ${centsToEurosStr(totalHT)} €</div>
-    <br/>
-<div>${paymentLineHtml}</div>
-<br/>
-<div>Nous vous remercions encore une fois pour votre confiance et restons à votre entière disposition pour toute question ou information complémentaire.</div>
-<div>N'hésitez pas à nous contacter si vous avez besoin de précisions sur votre commande ou sur les modalités de paiement.</div>
-<br/>
-<div>Nous vous souhaitons une excellente journée et à très bientôt pour la livraison de vos posters.</div>
-<br/>
-<div>Cordialement,</div>
-<div>Xavier CUZIN</div>
-    <div>SEIKAN GALLERY</div>
-    <div>seikan.gallery@gmail.com</div>
-    <div>06.10.38.02.08</div>
+// ✅ Texte “Documents joints” structuré
+const quoteDocText = quoteNumber
+  ? `• Le devis signé daté du ${fmtDateFR((inv as any).quote?.updatedAt ?? (inv as any).quote?.createdAt)}`
+  : `• Le devis (pièce jointe)`;
+
+const quoteDocHtml = quoteNumber
+  ? `<li><strong>Le devis signé</strong> daté du <strong>${fmtDateFR(
+      (inv as any).quote?.updatedAt ?? (inv as any).quote?.createdAt
+    )}</strong></li>`
+  : `<li><strong>Le devis</strong> (pièce jointe)</li>`;
+
+const invoiceDocText = `• La facture correspondant à votre commande, pour un montant total de ${centsToEurosStr(
+  totalHT
+)} €`;
+
+const invoiceDocHtml = `<li><strong>La facture</strong> correspondant à votre commande, pour un montant total de <strong>${centsToEurosStr(
+  totalHT
+)} €</strong></li>`;
+
+// ✅ Détails : bullet list, avec mots en gras en HTML
+const deliveryLabel = deliveryDate || "—";
+
+const bodyText = [
+  helloText,
+  ``,
+  thanksLine,
+  ``,
+  `Nous vous confirmons avoir bien reçu votre demande et avons le plaisir de vous envoyer, en pièces jointes, les documents relatifs à votre commande :`,
+  ``,
+  `Documents joints :`,
+  quoteDocText,
+  invoiceDocText,
+  ``,
+  `Les références des posters commandés :`,
+  ``,
+  ...posters.textLines,
+  ``,
+  `Détails importants concernant votre commande :`,
+  `• Date de livraison estimée : ${deliveryLabel}`,
+  `• Montant total de la commande : ${centsToEurosStr(totalHT)} €`,
+  `• ${paymentModeText}`,
+  `• ${paymentDeadlineText.replace(/\n/g, "\n• ")}`,
+  ``,
+  `Nous restons à votre entière disposition pour toute question ou information complémentaire. N'hésitez pas à nous contacter si vous avez besoin de précisions sur votre commande ou sur les modalités de paiement.`,
+  ``,
+  `Nous vous souhaitons une excellente journée et à très bientôt pour la livraison de vos posters.`,
+  ``,
+  `Cordialement,`,
+  `Xavier CUZIN`,
+  `SEIKAN GALLERY`,
+  `seikan.gallery@gmail.com`,
+  `06.10.38.02.08`,
+  ``,
+].join("\n");
+
+// ✅ HTML : structure propre + listes + titres en gras + tableau “classe”
+const bodyHtml = `
+<div style="font-family: Arial, Helvetica, sans-serif; font-size:14px; color:#111; line-height:1.55;">
+  <div>${helloHtml}</div>
+
+  <div style="height:14px;"></div>
+
+  <div>${escHtml(thanksLine)}</div>
+
+  <div style="height:14px;"></div>
+
+  <div>Nous vous confirmons avoir bien reçu votre demande et avons le plaisir de vous envoyer, en pièces jointes, les documents relatifs à votre commande :</div>
+
+  <div style="height:12px;"></div>
+
+  <div><strong>Documents joints :</strong></div>
+  <ul style="margin:8px 0 0 18px; padding:0;">
+    ${quoteDocHtml}
+    ${invoiceDocHtml}
+  </ul>
+
+  <div style="height:16px;"></div>
+
+  <div><strong>Les références des posters commandés :</strong></div>
+
+  <div style="height:8px;"></div>
+
+  <div style="border:1px solid #e5e7eb; border-radius:10px; overflow:hidden;">
+    <div style="padding:10px 12px; background:#fafafa; border-bottom:1px solid #e5e7eb;">
+      <div style="font-size:12px; color:#374151;">Détail des articles</div>
+    </div>
+    <div style="padding:10px 12px;">
+      ${posters.html}
+    </div>
   </div>
+
+  <div style="height:18px;"></div>
+
+  <div><strong>Détails importants concernant votre commande :</strong></div>
+  <ul style="margin:8px 0 0 18px; padding:0;">
+    <li><strong>Date de livraison estimée</strong> : <strong>${escHtml(deliveryLabel)}</strong></li>
+    <li><strong>Montant total de la commande :</strong> <strong>${escHtml(
+      centsToEurosStr(totalHT)
+    )} €</strong></li>
+    <li>${paymentModeHtml}</li>
+    <li>${paymentDeadlineHtml}</li>
+  </ul>
+
+  <div style="height:16px;"></div>
+
+  <div>Nous restons à votre entière disposition pour toute question ou information complémentaire. N&apos;hésitez pas à nous contacter si vous avez besoin de précisions sur votre commande ou sur les modalités de paiement.</div>
+
+  <div style="height:16px;"></div>
+
+  <div>Nous vous souhaitons une excellente journée et à très bientôt pour la livraison de vos posters.</div>
+
+  <div style="height:18px;"></div>
+
+  <div>Cordialement,</div>
+  <div>Xavier CUZIN</div>
+  <div>SEIKAN GALLERY</div>
+  <div>seikan.gallery@gmail.com</div>
+  <div>06.10.38.02.08</div>
+</div>
 `;
 
     const transporter = buildTransporter();
