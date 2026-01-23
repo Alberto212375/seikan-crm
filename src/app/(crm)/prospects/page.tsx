@@ -333,8 +333,12 @@ export default function ProspectsPage() {
           <button
             onClick={async () => {
               const created = await apiCreateProspect();
-              setProspects((prev) => [created, ...prev]);
-              setDrafts((prev) => ({
+
+// ✅ on fixe PRO en base dès la création (sinon conversion peut retomber PART)
+await apiPatchProspect(created.id, { isProfessional: true });
+
+setProspects((prev) => [created, ...prev]);
+setDrafts((prev) => ({
   ...prev,
   [created.id]: { ...initDraftFromProspect(created), isPro: true },
 }));
@@ -420,35 +424,40 @@ export default function ProspectsPage() {
                           type="checkbox"
                           checked={d.isPro}
                           onChange={async (e) => {
-                            const isPro = e.target.checked;
-                            updateDraft(p.id, { isPro });
+  const isPro = e.target.checked;
+  updateDraft(p.id, { isPro });
 
-                            // si on passe en particulier : on vide societe/service/siret côté UI + backend
-                            if (!isPro) {
-                              updateDraft(p.id, {
-                                societe: "",
-                                service: "",
-                                siret: "",
-                              });
-                              setProspects((prev) =>
-                                prev.map((x) =>
-                                  x.id === p.id
-                                    ? {
-                                        ...x,
-                                        societe: "",
-                                        service: "",
-                                        siret: "" as any,
-                                      }
-                                    : x
-                                )
-                              );
-                              await apiPatchProspect(p.id, {
-                                societe: "",
-                                service: "",
-                                siret: "",
-                              });
-                            }
-                          }}
+  // ✅ IMPORTANT : on persiste le type PRO/PART dans le backend
+  await apiPatchProspect(p.id, { isProfessional: isPro });
+
+  // si on passe en particulier : on vide societe/service/siret côté UI + backend
+  if (!isPro) {
+    updateDraft(p.id, {
+      societe: "",
+      service: "",
+      siret: "",
+    });
+    setProspects((prev) =>
+      prev.map((x) =>
+        x.id === p.id
+          ? {
+              ...x,
+              societe: "",
+              service: "",
+              siret: "" as any,
+            }
+          : x
+      )
+    );
+    await apiPatchProspect(p.id, {
+      societe: "",
+      service: "",
+      siret: "",
+      // ✅ cohérent
+      isProfessional: false,
+    });
+  }
+}}
                         />
                         <span className="text-xs text-neutral-700">
                           {d.isPro ? "Oui" : "Non"}

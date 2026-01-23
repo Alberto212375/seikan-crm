@@ -58,6 +58,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const adresse = typeof body?.adresse === "string" ? body.adresse : undefined;
   const demarcheLe = body?.demarcheLe;
   const methode = body?.methode as Methode | undefined;
+  const isProfessional = typeof body?.isProfessional === "boolean" ? body.isProfessional : undefined;
+
 
   // siret est “UI only” dans ton schema actuel -> on le persiste dans notes JSON
   const siret = typeof body?.siret === "string" ? body.siret : undefined;
@@ -93,13 +95,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     };
   }
 
-  // ✅ Bonus: isProfessional canonique (sert à la conversion)
-  const inferredIsPro = Boolean(
-    normalizeSpaces(pn.societe ?? "") ||
-      normalizeSpaces(pn.service ?? "") ||
-      normalizeSpaces(pn.siret ?? "")
-  );
-  pn.isProfessional = Boolean(pn.isProfessional ?? inferredIsPro);
+  // ✅ isProfessional explicite (vient de l’UI)
+// si non fourni, on garde le précédent / on infère
+if (isProfessional !== undefined) {
+  pn.isProfessional = isProfessional;
+}
+
+// ✅ Bonus: fallback inféré (sert à la conversion)
+const inferredIsPro = Boolean(
+  normalizeSpaces(pn.societe ?? "") ||
+    normalizeSpaces(pn.service ?? "") ||
+    normalizeSpaces(pn.siret ?? "")
+);
+pn.isProfessional = Boolean(pn.isProfessional ?? inferredIsPro);
+
 
   // ✅ Compat: on continue à écrire dans les colonnes legacy
   const data: any = {};
