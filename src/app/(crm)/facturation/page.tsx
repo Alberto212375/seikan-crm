@@ -23,6 +23,9 @@ type InvoiceListRow = {
 
   client: { id: string; displayName: string };
   quote: { id: string; number: string } | null;
+    // ✅ NEW : badge email envoyé (renvoyé par GET /api/invoices)
+  emailSentAt?: string | null;
+  emailSentCount?: number;
 };
 
 type InvoiceItem = {
@@ -105,6 +108,15 @@ function TypeBadge({ isPro }: { isPro: boolean }) {
       }`}
     >
       {isPro ? "PRO" : "PART"}
+    </span>
+  );
+}
+
+function EmailSentBadge({ sentAt }: { sentAt?: string | null }) {
+  if (!sentAt) return null;
+  return (
+    <span className="ml-2 inline-flex items-center rounded-full bg-neutral-900 px-2 py-0.5 text-[11px] font-medium text-white">
+      📧 Envoyé le {fmtDateFR(sentAt)}
     </span>
   );
 }
@@ -340,6 +352,7 @@ function FacturationInner() {
         return;
       }
       alert("Email envoyé au client ✅");
+            await refreshIssuedList();
     } finally {
       setSendingId("");
     }
@@ -385,7 +398,10 @@ function FacturationInner() {
               ) : (
                 rows.map((r) => (
                   <tr key={r.id} className="border-t">
-                    <td className="px-4 py-3 font-medium tabular-nums">{r.number}</td>
+                    <td className="px-4 py-3 font-medium tabular-nums">
+  <span>{r.number}</span>
+  <EmailSentBadge sentAt={r.emailSentAt} />
+</td>
                     <td className="px-4 py-3">{fmtDateFR(r.issuedAt ?? r.createdAt)}</td>
 
                     {/* ✅ Type PRO / PART */}
@@ -419,7 +435,7 @@ function FacturationInner() {
                           disabled={sendingId === r.id}
                           onClick={() => sendToClientFromRow(r.id)}
                         >
-                          {sendingId === r.id ? "Envoi…" : "Envoyer au client"}
+                          {sendingId === r.id ? "Envoi…" : r.emailSentAt ? "Renvoyer" : "Envoyer au client"}
                         </button>
 
                         <button className="rounded-xl border px-3 py-2 text-xs" onClick={() => archiveFromRow(r.id)}>

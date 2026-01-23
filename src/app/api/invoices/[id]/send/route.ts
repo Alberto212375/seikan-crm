@@ -252,6 +252,27 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       attachments,
     });
 
+        // ✅ Marquer "email envoyé" (metaJson facture)
+    try {
+      const currentMeta = safeJson<any>((inv as any).metaJson) || {};
+      const nowIso = new Date().toISOString();
+
+      await prisma.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          metaJson: JSON.stringify({
+            ...currentMeta,
+            emailSentAt: nowIso,
+            emailSentCount: Number(currentMeta.emailSentCount || 0) + 1,
+            emailSentTo: toEmail,
+            emailLastSubject: subject,
+          }),
+        },
+      });
+    } catch {
+      // non bloquant
+    }
+
     // Optionnel : log activité
     try {
       await prisma.activity.create({

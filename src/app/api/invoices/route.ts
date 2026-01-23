@@ -5,7 +5,6 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-
 function pad6(n: number) {
   return String(n).padStart(6, "0");
 }
@@ -42,6 +41,12 @@ type QuoteMetaLite = {
 
 type InvoiceMetaLite = {
   fromQuoteMetaJson?: string | null;
+
+  // ✅ NEW : badge email envoyé
+  emailSentAt?: string | null;
+  emailSentCount?: number | null;
+  emailSentTo?: string | null;
+  emailLastSubject?: string | null;
 };
 
 export async function GET() {
@@ -66,6 +71,7 @@ export async function GET() {
         depositPaidAmount: true,
 
         // ✅ nécessaire pour déduire PRO/PART depuis le devis d'origine
+        // ✅ + sert à lire emailSentAt
         metaJson: true,
 
         client: { select: { id: true, displayName: true } },
@@ -73,15 +79,19 @@ export async function GET() {
       },
     });
 
-    // ✅ ajoute isProfessional (PRO/PART) dans la liste
+    // ✅ ajoute isProfessional (PRO/PART) + emailSentAt dans la liste
     const enriched = invoices.map((inv: any) => {
       const invMeta = safeParse<InvoiceMetaLite>(inv.metaJson) ?? {};
       const fromQuoteMetaJson = invMeta.fromQuoteMetaJson ?? null;
       const quoteMeta = safeParse<QuoteMetaLite>(fromQuoteMetaJson) ?? {};
       const isProfessional = Boolean(quoteMeta.party?.isProfessional);
 
+      // ✅ NEW : infos d’envoi email (pour badge)
+      const emailSentAt = invMeta.emailSentAt ?? null;
+      const emailSentCount = Number(invMeta.emailSentCount ?? 0) || 0;
+
       const { metaJson, ...rest } = inv as any;
-      return { ...rest, isProfessional };
+      return { ...rest, isProfessional, emailSentAt, emailSentCount };
     });
 
     return NextResponse.json({ invoices: enriched });
@@ -149,7 +159,7 @@ export async function POST(req: Request) {
     const depositPaid = Boolean((quote as any).depositPaid);
     const depositPaidAmount = Number((quote as any).depositPaidAmount ?? depositHT) || 0;
 
-    // ✅ meta facture (remise/pénalité)
+    // ✅ meta facture (remise/pénalité) + futur emailSentAt
     const metaFromQuote = (quote as any).metaJson ?? null;
     const invoiceMeta = JSON.stringify({
       fromQuoteMetaJson: metaFromQuote,
@@ -158,6 +168,12 @@ export async function POST(req: Request) {
       discountEuros: 0,
       penalty40: false,
       penaltyExtraEuros: 0,
+
+      // ✅ NEW : statut envoi email (vide au départ)
+      emailSentAt: null,
+      emailSentCount: 0,
+      emailSentTo: null,
+      emailLastSubject: null,
     });
 
     // ✅ IMPORTANT : facture créée en DRAFT, issuedAt = null
