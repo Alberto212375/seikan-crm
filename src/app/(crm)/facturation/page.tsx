@@ -131,6 +131,9 @@ function FacturationInner() {
   const [penalty40, setPenalty40] = useState<boolean>(false);
   const [penaltyExtra, setPenaltyExtra] = useState<string>("0");
 
+  // ✅ UI envoi email
+  const [sendingId, setSendingId] = useState<string>("");
+
   async function refreshIssuedList() {
     const r = await fetch("/api/invoices", { cache: "no-store" });
     const j = await r.json().catch(() => ({}));
@@ -221,7 +224,8 @@ function FacturationInner() {
     }
     await loadInvoice(invoice.id);
   }
-    async function removeItem(itemId: string) {
+
+  async function removeItem(itemId: string) {
     if (!invoice) return;
     if (!confirm("Supprimer cette ligne de facture ?")) return;
 
@@ -322,14 +326,31 @@ function FacturationInner() {
     if (openId === invoiceId) router.push("/facturation");
   }
 
+  // ✅ Envoi email client (facture + devis)
+  async function sendToClientFromRow(invoiceId: string) {
+    if (sendingId) return;
+    if (!confirm("Envoyer cette facture (et le devis lié) au client par email ?")) return;
+
+    setSendingId(invoiceId);
+    try {
+      const r = await fetch(`/api/invoices/${invoiceId}/send`, { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(j?.error ?? "Erreur envoi email");
+        return;
+      }
+      alert("Email envoyé au client ✅");
+    } finally {
+      setSendingId("");
+    }
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Facturation</h1>
-          <p className="mt-1 text-neutral-600">
-            Liste des factures émises + détail (brouillon) + remise + pénalité + génération PDF.
-          </p>
+          <p className="mt-1 text-neutral-600">Liste des factures émises + détail (brouillon) + remise + pénalité + génération PDF.</p>
         </div>
       </div>
 
@@ -338,15 +359,16 @@ function FacturationInner() {
         <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
           <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-neutral-50 text-left text-neutral-600">
-  <tr>
-    <th className="px-4 py-3 w-[180px]">N° Facture</th>
-    <th className="px-4 py-3 w-[120px]">Date</th>
-    <th className="px-4 py-3 w-[80px]">Type</th>
-    <th className="px-4 py-3">Client</th>
-    <th className="px-4 py-3 w-[160px]">Total facture</th>
-    <th className="px-4 py-3 w-[320px] text-right">Actions</th>
-  </tr>
-</thead>
+              <tr>
+                <th className="px-4 py-3 w-[180px]">N° Facture</th>
+                <th className="px-4 py-3 w-[120px]">Date</th>
+                <th className="px-4 py-3 w-[80px]">Type</th>
+                <th className="px-4 py-3">Client</th>
+                <th className="px-4 py-3 w-[160px]">Total facture</th>
+                <th className="px-4 py-3 w-[420px] text-right">Actions</th>
+              </tr>
+            </thead>
+
             <tbody>
               {loading ? (
                 <tr className="border-t">
@@ -362,41 +384,51 @@ function FacturationInner() {
                 </tr>
               ) : (
                 rows.map((r) => (
-  <tr key={r.id} className="border-t">
-    <td className="px-4 py-3 font-medium tabular-nums">{r.number}</td>
-    <td className="px-4 py-3">{fmtDateFR(r.issuedAt ?? r.createdAt)}</td>
+                  <tr key={r.id} className="border-t">
+                    <td className="px-4 py-3 font-medium tabular-nums">{r.number}</td>
+                    <td className="px-4 py-3">{fmtDateFR(r.issuedAt ?? r.createdAt)}</td>
 
-    {/* ✅ Type PRO / PART */}
-    <td className="px-4 py-3">
-      <TypeBadge isPro={Boolean(r.isProfessional)} />
-    </td>
+                    {/* ✅ Type PRO / PART */}
+                    <td className="px-4 py-3">
+                      <TypeBadge isPro={Boolean(r.isProfessional)} />
+                    </td>
 
-    <td className="px-4 py-3">{r.client?.displayName ?? "—"}</td>
-    <td className="px-4 py-3 tabular-nums">{centsToEurosStr(r.totalHT)} €</td>
+                    <td className="px-4 py-3">{r.client?.displayName ?? "—"}</td>
+                    <td className="px-4 py-3 tabular-nums">{centsToEurosStr(r.totalHT)} €</td>
 
-    <td className="px-4 py-3">
-      <div className="flex items-center justify-end gap-2">
-        <button
-          className="rounded-xl border px-3 py-2 text-xs"
-          onClick={() => router.push(`/facturation?open=${encodeURIComponent(r.id)}`)}
-        >
-          Ouvrir
-        </button>
-        <a
-          className="rounded-xl border px-3 py-2 text-xs"
-          href={`/api/exports/invoices/${r.id}/pdf`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          PDF
-        </a>
-        <button className="rounded-xl border px-3 py-2 text-xs" onClick={() => archiveFromRow(r.id)}>
-          Archiver
-        </button>
-      </div>
-    </td>
-  </tr>
-))
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          className="rounded-xl border px-3 py-2 text-xs"
+                          onClick={() => router.push(`/facturation?open=${encodeURIComponent(r.id)}`)}
+                        >
+                          Ouvrir
+                        </button>
+
+                        <a
+                          className="rounded-xl border px-3 py-2 text-xs"
+                          href={`/api/exports/invoices/${r.id}/pdf`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          PDF
+                        </a>
+
+                        <button
+                          className="rounded-xl border px-3 py-2 text-xs"
+                          disabled={sendingId === r.id}
+                          onClick={() => sendToClientFromRow(r.id)}
+                        >
+                          {sendingId === r.id ? "Envoi…" : "Envoyer au client"}
+                        </button>
+
+                        <button className="rounded-xl border px-3 py-2 text-xs" onClick={() => archiveFromRow(r.id)}>
+                          Archiver
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -415,7 +447,7 @@ function FacturationInner() {
                   <div className="text-xl font-semibold tabular-nums">{invoice.number}</div>
                   <div className="mt-1 text-sm text-neutral-600">
                     Client : <span className="font-medium text-neutral-900">{invoice.client?.displayName ?? "—"}</span>{" "}
-<TypeBadge isPro={getIsProFromInvoiceMeta(invoice.metaJson)} />
+                    <TypeBadge isPro={getIsProFromInvoiceMeta(invoice.metaJson)} />
                     {invoice.quote?.number ? (
                       <>
                         {" "}
@@ -469,9 +501,7 @@ function FacturationInner() {
               {!invoice.depositPaid && (
                 <div className="rounded-2xl border p-4">
                   <div className="text-sm font-medium">Pénalité retard de paiement</div>
-                  <div className="mt-2 text-xs text-neutral-600">
-                    (L.441-10 / D.441-5) — tu peux appliquer 40€ + un montant libre en complément.
-                  </div>
+                  <div className="mt-2 text-xs text-neutral-600">(L.441-10 / D.441-5) — tu peux appliquer 40€ + un montant libre en complément.</div>
 
                   <div className="mt-3 grid gap-3 md:grid-cols-3">
                     <label className="flex items-center gap-2 text-sm md:col-span-1">
@@ -550,14 +580,14 @@ function FacturationInner() {
                 <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
                   <table className="w-full min-w-[820px] text-sm">
                     <thead className="bg-neutral-50 text-left text-neutral-600">
-  <tr>
-    <th className="px-4 py-3">Désignation</th>
-    <th className="px-4 py-3 w-[120px]">Qté</th>
-    <th className="px-4 py-3 w-[160px]">PU HT</th>
-    <th className="px-4 py-3 w-[160px]">Total</th>
-    <th className="px-4 py-3 w-[120px] text-right">Actions</th>
-  </tr>
-</thead>
+                      <tr>
+                        <th className="px-4 py-3">Désignation</th>
+                        <th className="px-4 py-3 w-[120px]">Qté</th>
+                        <th className="px-4 py-3 w-[160px]">PU HT</th>
+                        <th className="px-4 py-3 w-[160px]">Total</th>
+                        <th className="px-4 py-3 w-[120px] text-right">Actions</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {invoice.items
                         .slice()
@@ -591,16 +621,12 @@ function FacturationInner() {
                               </td>
                               <td className="px-4 py-2 tabular-nums">{centsToEurosStr(rowTotal)} €</td>
 
-<td className="px-4 py-2 text-right">
-  <button
-    type="button"
-    className="rounded-xl border px-3 py-2 text-xs"
-    onClick={() => removeItem(it.id)}
-  >
-    Suppr
-  </button>
-</td>
-</tr>
+                              <td className="px-4 py-2 text-right">
+                                <button type="button" className="rounded-xl border px-3 py-2 text-xs" onClick={() => removeItem(it.id)}>
+                                  Suppr
+                                </button>
+                              </td>
+                            </tr>
                           );
                         })}
                     </tbody>
@@ -625,6 +651,7 @@ function FacturationInner() {
     </div>
   );
 }
+
 export default function FacturationPage() {
   return (
     <Suspense fallback={null}>

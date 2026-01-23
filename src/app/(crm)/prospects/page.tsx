@@ -463,7 +463,7 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       {showPro ? (
                         <input
-                          className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2 truncate"
+                          className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                           value={d.societe}
                           onChange={(e) =>
                             updateDraft(p.id, { societe: e.target.value })
@@ -487,7 +487,7 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       {showPro ? (
                         <input
-                          className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2 truncate"
+                          className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                           value={d.service}
                           onChange={(e) =>
                             updateDraft(p.id, { service: e.target.value })
@@ -511,7 +511,7 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       {showPro ? (
                         <input
-                          className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2 truncate"
+                          className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                           placeholder="14 chiffres"
                           value={d.siret}
                           onChange={(e) =>
@@ -542,8 +542,7 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2 
 ">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2
- truncate"
+                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                         value={d.firstName}
                         onChange={(e) =>
                           updateDraft(p.id, { firstName: e.target.value })
@@ -567,8 +566,7 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2
 ">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2
- truncate"
+                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                         value={d.lastName}
                         onChange={(e) =>
                           updateDraft(p.id, { lastName: e.target.value })
@@ -593,8 +591,7 @@ export default function ProspectsPage() {
 ">
                       <input
                         type="email"
-                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2
- truncate"
+                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                         defaultValue={p.email}
                         onBlur={async (e) => {
                           const v = e.target.value;
@@ -612,8 +609,7 @@ export default function ProspectsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2
 ">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2 md:px-3 md:py-2
- truncate"
+                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                         defaultValue={p.telephone}
                         onBlur={async (e) => {
                           const v = e.target.value;

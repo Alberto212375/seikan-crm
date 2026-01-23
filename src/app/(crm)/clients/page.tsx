@@ -137,6 +137,8 @@ function methodLabel(c: ClientUi) {
 export default function ClientsPage() {
   const [clients, setClients] = useState<ClientUi[]>([]);
   const [loading, setLoading] = useState(true);
+    const [expandedNotesId, setExpandedNotesId] = useState<string | null>(null);
+
 
   const PAGE_SIZE = 8;
   const [page, setPage] = useState(1);
@@ -298,8 +300,7 @@ export default function ClientsPage() {
                     {/* Société */}
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className={`w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
- truncate ${!isPro ? blacked : ""}`}
+                        className={`w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base ${!isPro ? blacked : ""}`}
                         value={c.societe}
                         placeholder={!isPro ? "—" : ""}
                         disabled={!isPro}
@@ -313,8 +314,7 @@ export default function ClientsPage() {
                     {/* Service */}
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className={`w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
- truncate ${!isPro ? blacked : ""}`}
+                        className={`w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base ${!isPro ? blacked : ""}`}
                         value={c.service}
                         placeholder={!isPro ? "—" : ""}
                         disabled={!isPro}
@@ -328,9 +328,7 @@ export default function ClientsPage() {
                     {/* SIRET */}
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className={`w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
-
- truncate ${!isPro ? blacked : ""}`}
+                        className={`w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base ${!isPro ? blacked : ""}`}
                         value={c.siret}
                         placeholder={!isPro ? "—" : "14 chiffres"}
                         disabled={!isPro}
@@ -344,9 +342,7 @@ export default function ClientsPage() {
                     {/* ✅ Prénom (interverti) */}
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
-
- truncate"
+                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                         value={c.firstName}
                         onChange={(e) =>
                           setClients((p) => p.map((x) => (x.id === c.id ? { ...x, firstName: e.target.value } : x)))
@@ -358,9 +354,7 @@ export default function ClientsPage() {
                     {/* ✅ Nom (interverti) */}
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
-
- truncate"
+                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                         value={c.lastName}
                         onChange={(e) =>
                           setClients((p) => p.map((x) => (x.id === c.id ? { ...x, lastName: e.target.value } : x)))
@@ -373,9 +367,7 @@ export default function ClientsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
                         type="email"
-                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
-
- truncate"
+                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                         value={c.email}
                         onChange={(e) =>
                           setClients((p) => p.map((x) => (x.id === c.id ? { ...x, email: e.target.value } : x)))
@@ -387,9 +379,7 @@ export default function ClientsPage() {
                     {/* Téléphone */}
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2
-
- truncate"
+                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                         value={c.telephone}
                         onChange={(e) =>
                           setClients((p) =>
@@ -404,7 +394,7 @@ export default function ClientsPage() {
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <div className="relative">
                         <input
-                          className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2"
+                          className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                           placeholder="Rue"
                           value={c.street}
                           onChange={(e) => void onStreetChange(c.id, e.target.value)}
@@ -435,7 +425,7 @@ export default function ClientsPage() {
                     {/* ✅ CP */}
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2"
+                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                         placeholder="CP"
                         value={c.postalCode}
                         onChange={(e) =>
@@ -450,7 +440,7 @@ export default function ClientsPage() {
                     {/* ✅ VILLE */}
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <input
-                        className="w-full min-w-0 rounded border px-2 py-1 md:px-3 md:py-2"
+                        className="w-full min-w-0 rounded border px-2 py-2 text-sm md:px-3 md:py-2 md:text-base"
                         placeholder="Ville"
                         value={c.city}
                         onChange={(e) => setClients((p) => p.map((x) => (x.id === c.id ? { ...x, city: e.target.value } : x)))}
@@ -484,14 +474,21 @@ export default function ClientsPage() {
                     {/* Notes */}
                     <td className="px-2 py-1 md:px-3 md:py-2">
                       <textarea
-                        className="w-full min-w-0 min-h-[72px] resize-none rounded border px-2 py-1 md:px-3 md:py-2"
-                        value={c.notes}
-                        onChange={(e) =>
-                          setClients((p) => p.map((x) => (x.id === c.id ? { ...x, notes: e.target.value } : x)))
-                        }
-                        onBlur={async () => await apiPatchClient(c.id, { notes: c.notes })}
-                        placeholder="Habitudes, préférences, allergies…"
-                      />
+  className={[
+    "w-full min-w-0 resize-none rounded border px-2 py-2 transition-all text-sm md:px-3 md:py-2 md:text-base",
+    expandedNotesId === c.id ? "min-h-[220px]" : "min-h-[72px]",
+  ].join(" ")}
+  value={c.notes}
+  onFocus={() => setExpandedNotesId(c.id)}
+  onChange={(e) =>
+    setClients((p) => p.map((x) => (x.id === c.id ? { ...x, notes: e.target.value } : x)))
+  }
+  onBlur={async () => {
+    await apiPatchClient(c.id, { notes: c.notes });
+    setExpandedNotesId(null);
+  }}
+  placeholder="Habitudes, préférences, allergies…"
+/>
                     </td>
 
                     {/* Actions */}
