@@ -146,8 +146,9 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
       const fallbackContact = norm(pn.contact) || norm(prospect.name);
       const fallbackAdresse = norm(pn.adresse) || norm(prospect.location);
 
-      const fallbackEmail = norm(pn.email) || norm(prospect.email);
-      const fallbackTelephone = norm(pn.telephone) || norm(prospect.phone);
+             const fallbackEmail = norm(pn.email) || norm(prospect.email) || "";
+      const fallbackTelephone = norm(pn.telephone) || norm(prospect.phone) || "";
+
 
       // méthode
       const methode: Methode =
@@ -178,16 +179,20 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
         firstName = s.firstName;
       }
 
-      // adresse split
+          // adresse split (✅ plus robuste : complète les champs manquants, même partiellement)
       let street = norm(pn.street);
       let postalCode = norm(pn.postalCode);
       let city = norm(pn.city);
-      if (!street && !postalCode && !city && fallbackAdresse) {
+
+      if (fallbackAdresse) {
         const s = splitAdresse(fallbackAdresse);
-        street = s.street;
-        postalCode = s.postalCode;
-        city = s.city;
+
+        // on complète seulement ce qui manque
+        if (!street) street = s.street;
+        if (!postalCode) postalCode = s.postalCode;
+        if (!city) city = s.city;
       }
+
 
       const clientNotes: NotesJson = {
         // on part d’un merge propre

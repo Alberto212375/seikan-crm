@@ -151,6 +151,19 @@ function splitLastFirst(lastNameRaw: string, firstNameRaw: string) {
   return { lastName: ln0, firstName: "" };
 }
 
+function splitAdresseFull(adresse: string): { street: string; postalCode: string; city: string } {
+  const a = String(adresse ?? "").replace(/\s+/g, " ").trim();
+  const m = a.match(/(.*)\s(\d{5})\s(.+)$/);
+  if (m) {
+    return {
+      street: String(m[1] ?? "").trim(),
+      postalCode: String(m[2] ?? "").trim(),
+      city: String(m[3] ?? "").trim(),
+    };
+  }
+  return { street: a, postalCode: "", city: "" };
+}
+
 function toUi(c: any): ClientUi {
   const n = safeJsonNotes(c.notes) ?? {};
 
@@ -191,9 +204,18 @@ function toUi(c: any): ClientUi {
     email: String(n.email ?? c.email ?? ""),
     telephone: String(n.telephone ?? c.phone ?? ""),
 
-    street: String(n.street ?? ""),
-    postalCode: String(n.postalCode ?? ""),
-    city: String(n.city ?? ""),
+        // ✅ adresse : priorité notes, sinon fallback depuis billingAddress/shippingAddress
+    street: String(
+      n.street ?? splitAdresseFull(String(c.billingAddress ?? c.shippingAddress ?? "")).street ?? ""
+    ),
+    postalCode: String(
+      n.postalCode ??
+        splitAdresseFull(String(c.billingAddress ?? c.shippingAddress ?? "")).postalCode ??
+        ""
+    ),
+    city: String(
+      n.city ?? splitAdresseFull(String(c.billingAddress ?? c.shippingAddress ?? "")).city ?? ""
+    ),
 
     prospectedByPhone: Boolean(n.prospectedByPhone ?? false),
     prospectedByEmail: Boolean(n.prospectedByEmail ?? false),
