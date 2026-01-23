@@ -35,6 +35,7 @@ export default async function LoginPage({
 
         <form
           action={login}
+          autoComplete="off"
           className="mt-8 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm"
         >
           <input type="hidden" name="callbackUrl" value={callbackUrl} />
@@ -42,20 +43,24 @@ export default async function LoginPage({
           <label className="block text-sm font-medium">Email</label>
           <input
             name="email"
-            defaultValue="admin@local.test"
+            defaultValue=""
             className="mt-2 h-11 w-full rounded-md border border-zinc-300 px-3 outline-none focus:border-zinc-900"
             type="email"
-            autoComplete="email"
+            autoComplete="username"
+            inputMode="email"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             required
           />
 
           <label className="mt-5 block text-sm font-medium">Mot de passe</label>
           <input
             name="password"
-            defaultValue="Admin123!"
+            defaultValue=""
             className="mt-2 h-11 w-full rounded-md border border-zinc-300 px-3 outline-none focus:border-zinc-900"
             type="password"
-            autoComplete="current-password"
+            autoComplete="new-password"
             required
           />
 
