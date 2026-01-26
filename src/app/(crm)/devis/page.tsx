@@ -381,20 +381,24 @@ function QuoteList({
   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
   const [facturedQuoteIds, setFacturedQuoteIds] = useState<Set<string>>(new Set());
 
-      // ✅ Mode compact (tablette / petit écran) : plus fiable que pointer:coarse
-  const [isCompact, setIsCompact] = useState(false);
+        // ✅ Signature : autorisée sur appareils tactiles (iPad inclus), sans dépendre de la largeur
+  const [isTouch, setIsTouch] = useState(false);
 
   useEffect(() => {
     const compute = () => {
-      const w = typeof window !== "undefined" ? window.innerWidth : 9999;
-      setIsCompact(w <= 1024 && (typeof window !== "undefined") && window.matchMedia("(pointer: coarse)").matches);
+      if (typeof window === "undefined") return setIsTouch(false);
+
+      const coarse = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+      const touchPoints = (navigator as any)?.maxTouchPoints ?? 0;
+
+      // iPad / tablette / PC tactile : on autorise la signature
+      setIsTouch(coarse || touchPoints > 0);
     };
 
     compute();
     window.addEventListener("resize", compute);
     return () => window.removeEventListener("resize", compute);
   }, []);
-
 
   // ✅ modale signature
   const [signOpen, setSignOpen] = useState(false);
@@ -827,7 +831,7 @@ const balanceDueStr = balanceDueDate ? fmtDayMonthShort(balanceDueDate) : "";
 
                       <td className="px-4 py-3 md:px-5 md:py-4">
                         <div className="flex items-center justify-end gap-2">
-                          {isCompact && !isQuoteSigned(q.metaJson) && (
+                                                    {isTouch && !isQuoteSigned(q.metaJson) && (
                             <button
                               type="button"
                               className="rounded-xl border px-3 py-2 text-xs"
@@ -838,7 +842,7 @@ const balanceDueStr = balanceDueDate ? fmtDayMonthShort(balanceDueDate) : "";
                             </button>
                           )}
 
-                          {isCompact && isQuoteSigned(q.metaJson) && (
+                                                    {isTouch && isQuoteSigned(q.metaJson) && (
                             <div className="rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700 border border-emerald-200">
                               Signé
                             </div>
@@ -905,7 +909,7 @@ const balanceDueStr = balanceDueDate ? fmtDayMonthShort(balanceDueDate) : "";
       </div>
 
       {/* ✅✅✅ MODALE SIGNATURE — À LA FIN DU RETURN QuoteList */}
-      {signOpen && isCompact && (
+            {signOpen && isTouch && (
         <div
   className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overscroll-contain"
   onTouchMove={(e) => e.preventDefault()}
