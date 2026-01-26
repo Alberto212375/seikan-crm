@@ -303,8 +303,9 @@ model Consignment {
   seq    Int    @unique
   number String @unique
 
-  status   ConsignmentStatus @default(DRAFT)
+    status   ConsignmentStatus @default(DRAFT)
   signedAt DateTime?
+  metaJson String?
 
   // client lié
   clientId String
