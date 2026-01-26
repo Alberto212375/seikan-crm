@@ -5,6 +5,21 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function safeMeta(s: any): any {
+  if (!s) return {};
+  try {
+    return JSON.parse(String(s));
+  } catch {
+    return {};
+  }
+}
+
+function isSignedFromMeta(metaJson: any) {
+  const meta = safeMeta(metaJson);
+  const sig = meta?.signature ?? null;
+  return Boolean(sig?.accepted && sig?.signatureDataUrl);
+}
+
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const id = params.id;
 
@@ -61,7 +76,62 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const c = await prisma.consignment.findUnique({ where: { id } });
   if (!c) return NextResponse.json({ error: "Dépôt introuvable." }, { status: 404 });
 
-  // update dates
+  const alreadySigned = isSignedFromMeta((c as any).metaJson ?? null);
+
+  // 🔒 Interdit de modifier si signé (accepted + signatureDataUrl)
+  const isMutation =
+    Boolean(body?.update) ||
+    Boolean(body?.updateDates) ||
+    Boolean(body?.updateItem) ||
+    Boolean(body?.generate) ||
+    Boolean(body?.sign);
+
+  if (alreadySigned && isMutation) {
+    return NextResponse.json(
+      { error: "Ce dépôt-vente est signé : modification interdite." },
+      { status: 409 }
+    );
+  }
+
+  // ✅ update (tout-en-un) : dates + quantités des lignes
+  // payload attendu :
+  // { update: { depositDate, recoveryDate, periodDays, items: [{ id, qty }] } }
+  if (body?.update) {
+    const u = body.update || {};
+    const nextDepositDate = u.depositDate ? new Date(String(u.depositDate)) : c.depositDate;
+    const nextPeriodDays = Math.max(1, Number(u.periodDays ?? c.periodDays ?? 1));
+    const nextRecoveryDate = u.recoveryDate ? new Date(String(u.recoveryDate)) : c.recoveryDate;
+
+    const itemsRaw: any[] = Array.isArray(u.items) ? u.items : [];
+const items: Array<{ id: string; qty: number }> = itemsRaw
+  .map((it: any) => ({
+    id: String(it?.id || "").trim(),
+    qty: Math.max(1, Number(it?.qty ?? 1)),
+  }))
+  .filter((x: { id: string; qty: number }) => Boolean(x.id));
+
+    await prisma.$transaction(async (tx) => {
+      await tx.consignment.update({
+        where: { id },
+        data: {
+          depositDate: nextDepositDate,
+          recoveryDate: nextRecoveryDate,
+          periodDays: nextPeriodDays,
+        },
+      });
+
+      for (const it of items) {
+        await tx.consignmentItem.update({
+          where: { id: it.id },
+          data: { qty: it.qty },
+        });
+      }
+    });
+
+    return NextResponse.json({ ok: true });
+  }
+
+  // update dates (compat)
   if (body?.updateDates) {
     const d = body.updateDates || {};
     const depositDate = d.depositDate ? new Date(String(d.depositDate)) : c.depositDate;
@@ -76,7 +146,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ ok: true });
   }
 
-  // update item
+  // update item (compat)
   if (body?.updateItem) {
     const it = body.updateItem || {};
     const itemId = String(it.itemId || "");
@@ -94,14 +164,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ ok: true });
   }
 
-    // generate = on passe en GENERATED + on crée un Document (comme devis/facture)
+  // generate (bloqué si signé par le guard au-dessus)
   if (body?.generate) {
     const updated = await prisma.consignment.update({
       where: { id },
       data: { status: "GENERATED" },
     });
 
-    // Document “PDF dépôt” (même si le PDF est généré à la volée, on garde un artefact dans Document)
     try {
       const filename = `Depot-vente-${updated.number}.pdf`;
       await prisma.document.create({
@@ -115,14 +184,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           clientId: updated.clientId,
         },
       });
-    } catch {
-      // non bloquant
-    }
+    } catch {}
 
     return NextResponse.json({ ok: true });
   }
 
-  // sign = on passe en SIGNED + signedAt + Document “signé”
+  // sign (bloqué si signé par le guard au-dessus)
   if (body?.sign) {
     const updated = await prisma.consignment.update({
       where: { id },
@@ -142,13 +209,33 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           clientId: updated.clientId,
         },
       });
-    } catch {
-      // non bloquant
-    }
+    } catch {}
 
     return NextResponse.json({ ok: true });
   }
 
-
   return NextResponse.json({ error: "Action inconnue." }, { status: 400 });
+}
+
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const id = params.id;
+
+  const c = await prisma.consignment.findUnique({ where: { id } });
+  if (!c) return NextResponse.json({ error: "Dépôt introuvable." }, { status: 404 });
+
+  const alreadySigned = isSignedFromMeta((c as any).metaJson ?? null);
+  if (alreadySigned) {
+    return NextResponse.json(
+      { error: "Ce dépôt-vente est signé : suppression interdite." },
+      { status: 409 }
+    );
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.document.deleteMany({ where: { consignmentId: id } });
+    await tx.consignmentItem.deleteMany({ where: { consignmentId: id } });
+    await tx.consignment.delete({ where: { id } });
+  });
+
+  return NextResponse.json({ ok: true });
 }

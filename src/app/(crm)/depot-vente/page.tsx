@@ -339,8 +339,16 @@ function DepotList({
     return (rows ?? []).slice(start, start + PAGE_SIZE);
   }, [rows, safePage]);
 
-  const [openLoading, setOpenLoading] = useState(false);
+   const [openLoading, setOpenLoading] = useState(false);
   const [openDetail, setOpenDetail] = useState<any | null>(null);
+
+  // ✅ Edition (panneau "Ouvrir") : dates + quantités
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editDepositDate, setEditDepositDate] = useState("");
+  const [editRecoveryDate, setEditRecoveryDate] = useState("");
+  const [editPeriodDays, setEditPeriodDays] = useState("14");
+  const [editQtyByItemId, setEditQtyByItemId] = useState<Record<string, string>>({});
 
   // ✅ Signature : autorisée sur appareils tactiles (iPad inclus)
   const [isTouch, setIsTouch] = useState(false);
@@ -412,7 +420,28 @@ function DepotList({
         setOpenDetail(null);
         return;
       }
-      setOpenDetail(j.consignment ?? null);
+            const d = j.consignment ?? null;
+      setOpenDetail(d);
+
+      // reset édition
+      setEditOpen(false);
+
+      if (d) {
+        setEditDepositDate(String(d.depositDate || "").slice(0, 10));
+        setEditRecoveryDate(String(d.recoveryDate || "").slice(0, 10));
+        setEditPeriodDays(String(d.periodDays ?? 14));
+
+        const map: Record<string, string> = {};
+        for (const it of Array.isArray(d.items) ? d.items : []) {
+          if (it?.id) map[String(it.id)] = String(it.qty ?? 1);
+        }
+        setEditQtyByItemId(map);
+      } else {
+        setEditDepositDate("");
+        setEditRecoveryDate("");
+        setEditPeriodDays("14");
+        setEditQtyByItemId({});
+      }
     } finally {
       setOpenLoading(false);
     }
@@ -871,6 +900,37 @@ function DepotList({
     </div>
   ) : null}
 
+  {/* ✅ Modifier / Supprimer UNIQUEMENT si non signé */}
+  {!isConsignmentSigned(openDetail?.metaJson ?? null) ? (
+    <>
+      <button
+        className="rounded-xl border px-3 py-2 text-xs"
+        onClick={() => setEditOpen((v) => !v)}
+      >
+        {editOpen ? "Fermer modification" : "Modifier"}
+      </button>
+
+      <button
+        className="rounded-xl border px-3 py-2 text-xs"
+        onClick={async () => {
+          if (!confirm("Supprimer définitivement ce dépôt-vente ?")) return;
+
+          const res = await fetch(`/api/consignments/${encodeURIComponent(openDetail.id)}`, {
+            method: "DELETE",
+          });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok) return alert(j?.error ?? "Erreur suppression dépôt-vente");
+
+          alert("Dépôt-vente supprimé ✅");
+          await refresh();
+          onOpen("");
+        }}
+      >
+        Supprimer
+      </button>
+    </>
+  ) : null}
+
   <button
     className="rounded-xl border px-3 py-2 text-xs"
     onClick={async () => {
@@ -888,6 +948,140 @@ function DepotList({
     {openDetail.emailSentAt ? "Renvoyer" : "Envoyer au client"}
   </button>
 </div>
+
+{editOpen && !isConsignmentSigned(openDetail?.metaJson ?? null) ? (
+  <div className="mt-4 rounded-2xl border bg-neutral-50 p-3 space-y-3">
+    <div className="text-sm font-medium">Modification du dépôt-vente</div>
+
+    <div className="grid gap-3 md:grid-cols-3">
+      <label className="text-sm">
+        <span className="text-neutral-600">Date dépôt</span>
+        <input
+          type="date"
+          className="mt-1 w-full rounded-xl border px-3 py-2"
+          value={editDepositDate}
+          onChange={(e) => setEditDepositDate(e.target.value)}
+          disabled={editSaving}
+        />
+      </label>
+
+      <label className="text-sm">
+        <span className="text-neutral-600">Durée (jours)</span>
+        <input
+          className="mt-1 w-full rounded-xl border px-3 py-2"
+          value={editPeriodDays}
+          onChange={(e) => setEditPeriodDays(e.target.value)}
+          disabled={editSaving}
+        />
+      </label>
+
+      <label className="text-sm">
+        <span className="text-neutral-600">Date récupération</span>
+        <input
+          type="date"
+          className="mt-1 w-full rounded-xl border px-3 py-2"
+          value={editRecoveryDate}
+          onChange={(e) => setEditRecoveryDate(e.target.value)}
+          disabled={editSaving}
+        />
+      </label>
+    </div>
+
+    <div className="rounded-2xl border bg-white overflow-hidden">
+      <div className="px-3 py-2 text-xs text-neutral-600 border-b">Quantités (lignes)</div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] text-sm">
+          <thead className="bg-neutral-50 text-left text-neutral-600">
+            <tr>
+              <th className="px-3 py-2">Réf</th>
+              <th className="px-3 py-2">Format</th>
+              <th className="px-3 py-2">Nom (FR)</th>
+              <th className="px-3 py-2 w-[120px]">Qté</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(Array.isArray(openDetail.items) ? openDetail.items : []).map((it: any) => (
+              <tr key={it.id} className="border-t">
+                <td className="px-3 py-2 font-medium tabular-nums">{it.ref}</td>
+                <td className="px-3 py-2">{it.format}</td>
+                <td className="px-3 py-2">{it.nameFR ?? "—"}</td>
+                <td className="px-3 py-2">
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-full rounded-xl border px-3 py-2"
+                    value={editQtyByItemId[String(it.id)] ?? String(it.qty ?? 1)}
+                    onChange={(e) =>
+                      setEditQtyByItemId((p) => ({
+                        ...p,
+                        [String(it.id)]: e.target.value,
+                      }))
+                    }
+                    disabled={editSaving}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div className="flex items-center justify-end gap-2">
+      <button
+        className="rounded-xl border px-3 py-2 text-xs"
+        onClick={() => setEditOpen(false)}
+        disabled={editSaving}
+      >
+        Annuler
+      </button>
+
+      <button
+        className="rounded-xl bg-black px-3 py-2 text-xs text-white disabled:opacity-60"
+        disabled={editSaving}
+        onClick={async () => {
+          setEditSaving(true);
+          try {
+            const payload = {
+              update: {
+                depositDate: editDepositDate,
+                recoveryDate: editRecoveryDate,
+                periodDays: Number(editPeriodDays || 14),
+                items: (Array.isArray(openDetail.items) ? openDetail.items : []).map((it: any) => ({
+                  id: String(it.id),
+                  qty: Math.max(1, Number(editQtyByItemId[String(it.id)] ?? it.qty ?? 1)),
+                })),
+              },
+            };
+
+            const res = await fetch(`/api/consignments/${encodeURIComponent(openDetail.id)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok) return alert(j?.error ?? "Erreur modification dépôt-vente");
+
+            alert("Dépôt-vente modifié ✅");
+            await refresh();
+            await loadOpen(openDetail.id);
+            setEditOpen(false);
+          } finally {
+            setEditSaving(false);
+          }
+        }}
+      >
+        {editSaving ? "Enregistrement…" : "Enregistrer"}
+      </button>
+    </div>
+
+    <div className="text-[11px] text-neutral-500">
+      Rappel : dès qu’il est signé, toute modification/suppression est bloquée.
+    </div>
+  </div>
+) : null}
 
                 </>
               )}
