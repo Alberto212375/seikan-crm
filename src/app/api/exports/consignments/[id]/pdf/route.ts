@@ -1,5 +1,7 @@
 // src/app/api/exports/consignments/[id]/pdf/route.ts
 import { NextResponse } from "next/server";
+import path from "node:path";
+import fs from "node:fs";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -170,26 +172,45 @@ const totalValue = (c.items ?? []).reduce(
   0
 );
 
+    // ✅ Police locale (comme devis) : évite Helvetica.afm sur Vercel
+  const fontPath = path.join(process.cwd(), "src", "assets", "fonts", "DejaVuSans.ttf");
+  const fontBoldPath = path.join(process.cwd(), "src", "assets", "fonts", "DejaVuSans-Bold.ttf");
+
   const doc = new PdfDoc({
     size: "A4",
     margin: 48,
+    autoFirstPage: false,
+    font: null,
     info: { Title: `Depot-vente ${c.number}` },
   });
 
   const chunks: Buffer[] = [];
   doc.on("data", (b: Buffer) => chunks.push(b));
-  const done = new Promise<Buffer>((resolve) => {
+
+  const done = new Promise<Buffer>((resolve, reject) => {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
   });
 
-    // Footer (doit être branché AVANT tout addPage)
+  // Fonts
+  if (fs.existsSync(fontPath)) {
+    doc.registerFont("base", fontPath);
+    doc.font("base");
+  }
+  if (fs.existsSync(fontBoldPath)) {
+    doc.registerFont("baseBold", fontBoldPath);
+  }
+
+    // Footer (comme devis : police locale)
   const addFooter = () => {
     const bottom = doc.page.height - 40;
-    doc.font("Helvetica").fontSize(9).fillColor("#666666");
+    doc.font("base").fontSize(9).fillColor("#666666");
     doc.text("SEIKAN GALLERY", 48, bottom, { align: "left" });
     doc.text(`Contrat dépôt-vente ${c.number}`, 48, bottom, { align: "right" });
     doc.fillColor("#000000");
+    doc.font("base");
   };
+
   addFooter();
   doc.on("pageAdded", addFooter);
 
