@@ -42,13 +42,96 @@ function safeJsonParse<T>(s: any): T | null {
   }
 }
 
-function dataUrlToBuffer(dataUrl: string) {
-  const m = String(dataUrl || "").match(/^data:image\/png;base64,(.+)$/);
-  if (!m) return null;
+function decodeDataUrlToImageBuffer(dataUrl: string): Buffer | null {
   try {
-    return Buffer.from(m[1], "base64");
+    const s = String(dataUrl || "");
+    if (!s.startsWith("data:image/")) return null;
+
+    const base64 = s.split(",")[1] || "";
+    if (!base64) return null;
+
+    return Buffer.from(base64, "base64");
   } catch {
     return null;
+  }
+}
+
+// ✅ Détourage + recadrage (si pngjs dispo). Fallback = buffer original.
+function tryTrimSignaturePng(buf: Buffer): Buffer {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { PNG } = require("pngjs");
+
+    const png = PNG.sync.read(buf);
+    const { width, height, data } = png;
+
+    // 1) rendre le "presque blanc" transparent
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (width * y + x) << 2;
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const a = data[i + 3];
+
+        if (a === 0) continue;
+
+        // blanc / quasi blanc => transparent
+        if (r >= 245 && g >= 245 && b >= 245) {
+          data[i + 3] = 0;
+        }
+      }
+    }
+
+    // 2) bounding box des pixels non transparents
+    let minX = width,
+      minY = height,
+      maxX = -1,
+      maxY = -1;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (width * y + x) << 2;
+        const a = data[i + 3];
+        if (a > 0) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    // si rien trouvé, on renvoie le PNG original
+    if (maxX < 0 || maxY < 0) return buf;
+
+    // padding léger (évite de couper la plume)
+    const pad = 6;
+    minX = Math.max(0, minX - pad);
+    minY = Math.max(0, minY - pad);
+    maxX = Math.min(width - 1, maxX + pad);
+    maxY = Math.min(height - 1, maxY + pad);
+
+    const outW = maxX - minX + 1;
+    const outH = maxY - minY + 1;
+
+    const out = new PNG({ width: outW, height: outH });
+
+    for (let y = 0; y < outH; y++) {
+      for (let x = 0; x < outW; x++) {
+        const srcI = (width * (minY + y) + (minX + x)) << 2;
+        const dstI = (outW * y + x) << 2;
+        out.data[dstI] = data[srcI];
+        out.data[dstI + 1] = data[srcI + 1];
+        out.data[dstI + 2] = data[srcI + 2];
+        out.data[dstI + 3] = data[srcI + 3];
+      }
+    }
+
+    return PNG.sync.write(out);
+  } catch {
+    // pngjs pas dispo ou erreur => fallback
+    return buf;
   }
 }
 
@@ -249,17 +332,21 @@ const totalValue = (c.items ?? []).reduce(
   doc.strokeColor("#000000");
 
   // ✅ si signature présente, on l’intègre dans la case
-  if (isSigned) {
-    const png = dataUrlToBuffer(String((sig as any)?.signatureDataUrl || ""));
-    if (png) {
-      // image centrée dans le cadre
+    if (isSigned) {
+    const imgBufRaw = decodeDataUrlToImageBuffer(String((sig as any)?.signatureDataUrl || ""));
+    if (imgBufRaw) {
+      const imgBuf = tryTrimSignaturePng(imgBufRaw);
+
       const pad = 8;
       const imgX = rightX + pad;
       const imgY = sigY + 28 + pad;
+
       const imgW = boxW - pad * 2;
       const imgH = boxH - pad * 2;
+
       try {
-        doc.image(png, imgX, imgY, { fit: [imgW, imgH] });
+        // ✅ comme Devis : pas de fond “blanc” qui masque, image détourée/recadrée
+        doc.image(imgBuf, imgX, imgY, { fit: [imgW, imgH] });
       } catch {
         // si image invalide, on ignore
       }
@@ -268,7 +355,8 @@ const totalValue = (c.items ?? []).reduce(
     // mentions sous la case
     const ln = String((sig as any)?.signerLastName ?? "").toUpperCase();
     const fn = String((sig as any)?.signerFirstName ?? "");
-    const role = String((sig as any)?.signerRole ?? "Gérant");
+    const role = String((sig as any)?.signerRole ?? "").trim() || "Gérant";
+
     doc.font("Helvetica").fontSize(9).fillColor("#111111");
     doc.text("Bon pour accord", rightX, sigY + 28 + boxH + 6);
     doc.text(`Nom : ${ln} ${fn} — ${role}`, rightX, sigY + 28 + boxH + 18);
