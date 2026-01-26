@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -164,6 +165,13 @@ export default function DepotVentePage() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ConsignmentRow[]>([]);
   const [clients, setClients] = useState<ClientUi[]>([]);
+    const router = useRouter();
+  const sp = useSearchParams();
+  const openId = sp.get("open") || "";
+
+  const [openLoading, setOpenLoading] = useState(false);
+  const [openDetail, setOpenDetail] = useState<any | null>(null);
+
 
   // create form
   const [clientId, setClientId] = useState("");
@@ -281,6 +289,32 @@ export default function DepotVentePage() {
     setRows((j.consignments ?? []) as ConsignmentRow[]);
   }
 
+    function setOpen(id: string) {
+    const base = "/depot-vente";
+    if (!id) router.replace(base);
+    else router.replace(`${base}?open=${encodeURIComponent(id)}`);
+  }
+
+  async function loadOpen(id: string) {
+    if (!id) {
+      setOpenDetail(null);
+      return;
+    }
+    setOpenLoading(true);
+    try {
+      const r = await fetch(`/api/consignments/${encodeURIComponent(id)}`, { cache: "no-store" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(j?.error ?? "Erreur chargement dépôt-vente");
+        setOpenDetail(null);
+        return;
+      }
+      setOpenDetail(j.consignment ?? null);
+    } finally {
+      setOpenLoading(false);
+    }
+  }
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -298,7 +332,13 @@ export default function DepotVentePage() {
     return () => {
       alive = false;
     };
-  }, []);
+    }, []);
+
+  // ✅ 4D: charger automatiquement le panneau quand openId change
+  useEffect(() => {
+    loadOpen(openId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId]);
 
   function syncItemFromSelection(item: DraftItem, nextFormatUi: DraftItem["format"], nextSuffix: string) {
     const fmt = formatUiToInternal(nextFormatUi);
@@ -377,7 +417,9 @@ export default function DepotVentePage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 space-y-6">
+  <div className="mx-auto max-w-6xl px-4 py-8">
+    <div className={`grid gap-6 ${openId ? "lg:grid-cols-[1fr_420px]" : ""}`}>
+      <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Dépôt-vente</h1>
         <p className="mt-1 text-neutral-600">
@@ -772,11 +814,11 @@ export default function DepotVentePage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
                         <button
-                          className="rounded-xl border px-3 py-2 text-xs"
-                          onClick={() => (window.location.href = `/depot-vente/${encodeURIComponent(r.id)}`)}
-                        >
-                          Ouvrir
-                        </button>
+  className="rounded-xl border px-3 py-2 text-xs"
+  onClick={() => setOpen(r.id)}
+>
+  Ouvrir
+</button>
 
                         <a
                           className="rounded-xl border px-3 py-2 text-xs"
@@ -819,10 +861,95 @@ export default function DepotVentePage() {
                   </tr>
                 ))
               )}
-            </tbody>
+                        </tbody>
           </table>
         </div>
       </div>
+
+      </div>
+
+      {/* Panneau détail via ?open= */}
+      {openId ? (
+        <div className="rounded-2xl border bg-white shadow-sm overflow-hidden h-fit sticky top-6">
+          <div className="border-b px-4 py-3 flex items-center justify-between">
+            <div className="text-sm font-medium">Détail dépôt-vente</div>
+            <button className="rounded-xl border px-3 py-2 text-xs" onClick={() => setOpen("")}>
+              Fermer
+            </button>
+          </div>
+
+          <div className="p-4 space-y-3">
+            {openLoading ? (
+              <div className="text-sm text-neutral-500">Chargement…</div>
+            ) : !openDetail ? (
+              <div className="text-sm text-neutral-500">Aucun détail.</div>
+            ) : (
+              <>
+                <div>
+                  <div className="text-xl font-semibold tabular-nums">{openDetail.number}</div>
+                  <div className="mt-1 text-sm text-neutral-600">
+                    Client : <span className="font-medium text-neutral-900">{openDetail.client?.displayName ?? "—"}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-neutral-500">
+                    Statut : <span className="font-medium">{openDetail.status}</span>
+                    {openDetail.emailSentAt ? <> · 📧 Envoyé le {fmtDateFR(openDetail.emailSentAt)}</> : null}
+                  </div>
+                </div>
+
+                <div className="grid gap-2 text-sm">
+                  <div className="rounded-xl border bg-neutral-50 px-3 py-2">
+                    Dépôt : <span className="font-medium">{fmtDateFR(openDetail.depositDate)}</span>
+                  </div>
+                  <div className="rounded-xl border bg-neutral-50 px-3 py-2">
+                    Récupération : <span className="font-medium">{fmtDateFR(openDetail.recoveryDate)}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <a
+                    className="rounded-xl border px-3 py-2 text-xs"
+                    href={`/depot-vente/${encodeURIComponent(openDetail.id)}`}
+                  >
+                    Page complète
+                  </a>
+
+                  <a
+                    className="rounded-xl border px-3 py-2 text-xs"
+                    href={`/api/exports/consignments/${encodeURIComponent(openDetail.id)}/pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    PDF
+                  </a>
+
+                  <a
+                    className="rounded-xl border px-3 py-2 text-xs"
+                    href={`/depot-vente/${encodeURIComponent(openDetail.id)}?action=sign`}
+                  >
+                    Signer
+                  </a>
+
+                  <button
+                    className="rounded-xl border px-3 py-2 text-xs"
+                    onClick={async () => {
+                      if (!confirm("Envoyer ce dépôt-vente au client par email ?")) return;
+                      const res = await fetch(`/api/consignments/${encodeURIComponent(openDetail.id)}/send`, { method: "POST" });
+                      const j = await res.json().catch(() => ({}));
+                      if (!res.ok) return alert(j?.error ?? "Erreur envoi email");
+                      alert("Email envoyé au client ✅");
+                      await refresh();
+                      await loadOpen(openDetail.id);
+                    }}
+                  >
+                    {openDetail.emailSentAt ? "Renvoyer" : "Envoyer au client"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
-  );
+  </div>
+);
 }

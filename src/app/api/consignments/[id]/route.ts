@@ -35,7 +35,12 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       recoveryDate: c.recoveryDate.toISOString(),
       periodDays: c.periodDays,
       emailSentAt: c.emailSentAt ? c.emailSentAt.toISOString() : null,
-      emailSentCount: c.emailSentCount ?? 0,
+            emailSentCount: c.emailSentCount ?? 0,
+
+      // ✅ nécessaire pour hydrater l’UI signature + PDF signé
+      metaJson: (c as any).metaJson ?? null,
+      signedAt: (c as any).signedAt ? (c as any).signedAt.toISOString() : null,
+
       items: c.items,
       pdf: pdfDoc
         ? { id: pdfDoc.id, filename: pdfDoc.filename, storageKey: pdfDoc.storageKey }

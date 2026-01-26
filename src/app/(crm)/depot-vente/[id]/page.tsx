@@ -1,7 +1,7 @@
 // src/app/(crm)/depot-vente/[id]/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -41,23 +41,68 @@ type Detail = {
 
   emailSentAt?: string | null;
 
+  metaJson?: string | null;
+
   items: Item[];
 };
+
+type ConsignmentMeta = Partial<{
+  signature: Partial<{
+    signerFirstName: string;
+    signerLastName: string;
+    signerRole: string;
+    accepted: boolean;
+    signedAt: string;
+    signatureDataUrl: string;
+  }>;
+}>;
+
+function safeMeta(s: string | null | undefined): ConsignmentMeta {
+  if (!s) return {};
+  try {
+    return JSON.parse(s) as ConsignmentMeta;
+  } catch {
+    return {};
+  }
+}
 
 export default function DepotVenteDetailPage({ params }: { params: { id: string } }) {
   const id = params.id;
   const sp = useSearchParams();
-  const action = sp.get("action");
+  const action = sp.get("action"); // "sign" => on ouvre la zone signature
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [c, setC] = useState<Detail | null>(null);
 
+  // signature UI
+  const [signerFirstName, setSignerFirstName] = useState("");
+  const [signerLastName, setSignerLastName] = useState("");
+  const [signerRole, setSignerRole] = useState("Gérant");
+  const [accepted, setAccepted] = useState(false);
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawing = useRef(false);
+
+  const signatureOpen = action === "sign";
+
   async function load() {
     const r = await fetch(`/api/consignments/${encodeURIComponent(id)}`, { cache: "no-store" });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) return alert(j?.error ?? "Erreur chargement dépôt-vente");
-    setC(j.consignment as Detail);
+    if (!r.ok) {
+      alert(j?.error ?? "Erreur chargement dépôt-vente");
+      return;
+    }
+    const cc = j.consignment as Detail;
+    setC(cc);
+
+    // hydrate signature fields si déjà signé
+    const meta = safeMeta((cc as any).metaJson ?? null);
+    const sig = (meta as any)?.signature ?? {};
+    if (sig?.signerFirstName) setSignerFirstName(String(sig.signerFirstName));
+    if (sig?.signerLastName) setSignerLastName(String(sig.signerLastName));
+    if (sig?.signerRole) setSignerRole(String(sig.signerRole));
+    if (sig?.accepted) setAccepted(Boolean(sig.accepted));
   }
 
   useEffect(() => {
@@ -82,37 +127,133 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
     return { qty, value };
   }, [c]);
 
-  async function patch(body: any) {
+  function clearCanvas() {
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, cv.width, cv.height);
+  }
+
+  function ensureCanvasBg() {
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    // fond blanc (sinon transparent)
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+  }
+
+  useEffect(() => {
+    // init canvas
+    const cv = canvasRef.current;
+    if (!cv) return;
+    cv.width = 700;
+    cv.height = 220;
+    ensureCanvasBg();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signatureOpen]);
+
+  function getPos(e: any) {
+    const cv = canvasRef.current!;
+    const rect = cv.getBoundingClientRect();
+    const clientX = e.touches?.[0]?.clientX ?? e.clientX;
+    const clientY = e.touches?.[0]?.clientY ?? e.clientY;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  function onDown(e: any) {
+    if (!canvasRef.current) return;
+    drawing.current = true;
+    const ctx = canvasRef.current.getContext("2d");
+    if (!ctx) return;
+    const p = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+  }
+
+  function onMove(e: any) {
+    if (!drawing.current || !canvasRef.current) return;
+    const ctx = canvasRef.current.getContext("2d");
+    if (!ctx) return;
+    const p = getPos(e);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  }
+
+  function onUp() {
+    drawing.current = false;
+  }
+
+  async function submitSignature() {
+    if (!c) return;
+
+    const fn = String(signerFirstName || "").trim();
+    const ln = String(signerLastName || "").trim();
+    if (!fn || !ln) return alert("Nom + prénom du signataire requis.");
+    if (!accepted) return alert("Tu dois cocher la mention 'Bon pour accord'.");
+
+    const cv = canvasRef.current;
+    if (!cv) return alert("Canvas signature introuvable.");
+
+    const dataUrl = cv.toDataURL("image/png");
+    if (!dataUrl.startsWith("data:image/")) return alert("Signature invalide.");
+
     setSaving(true);
     try {
-      const r = await fetch(`/api/consignments/${encodeURIComponent(id)}`, {
+      const r = await fetch(`/api/consignments/${encodeURIComponent(id)}/signature`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          signerFirstName: fn,
+          signerLastName: ln,
+          signerRole,
+          accepted,
+          signatureDataUrl: dataUrl,
+        }),
       });
+
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        alert(j?.error ?? "Erreur action dépôt-vente");
-        return;
-      }
+      if (!r.ok) return alert(j?.error ?? "Erreur signature");
+
+      await load();
+      alert("Signé ✅");
+      window.open(`/api/exports/consignments/${encodeURIComponent(id)}/pdf`, "_blank");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function sendToClient() {
+    if (!c) return;
+    if (!confirm("Envoyer ce dépôt-vente au client par email ?")) return;
+
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/consignments/${encodeURIComponent(id)}/send`, { method: "POST" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) return alert(j?.error ?? "Erreur envoi email");
+
+      alert("Email envoyé au client ✅");
       await load();
     } finally {
       setSaving(false);
     }
   }
 
-  // “Signer” direct depuis query ?action=sign
-  useEffect(() => {
-    if (!c) return;
-    if (action === "sign" && c.status !== "SIGNED") {
-      void patch({ sign: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [action, c?.id]);
-
   if (loading || !c) {
     return <div className="mx-auto max-w-5xl px-4 py-10 text-sm text-neutral-500">Chargement…</div>;
   }
+
+  const meta = safeMeta((c as any).metaJson ?? null);
+  const sig = (meta as any)?.signature ?? {};
+  const isSigned = Boolean(sig?.accepted && sig?.signatureDataUrl);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 space-y-6">
@@ -125,6 +266,7 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
           <div className="mt-1 text-xs text-neutral-500">
             Statut : <span className="font-medium">{c.status}</span>
             {c.emailSentAt ? <> · 📧 Envoyé le {fmtDateFR(c.emailSentAt)}</> : null}
+            {isSigned ? <> · ✍️ Signé le {fmtDateFR(sig?.signedAt ?? null)}</> : null}
           </div>
         </div>
 
@@ -138,21 +280,13 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
             PDF
           </a>
 
-          <button
-            className="rounded-xl border px-3 py-2 text-xs"
-            disabled={saving}
-            onClick={() => patch({ generate: true })}
-          >
-            {saving ? "…" : "Générer le dépôt"}
+          <button className="rounded-xl border px-3 py-2 text-xs" disabled={saving} onClick={sendToClient}>
+            {saving ? "…" : "Envoyer au client"}
           </button>
 
-          <button
-            className="rounded-xl bg-black px-3 py-2 text-xs text-white"
-            disabled={saving}
-            onClick={() => patch({ sign: true })}
-          >
-            {saving ? "…" : "Signer"}
-          </button>
+          <a className="rounded-xl bg-black px-3 py-2 text-xs text-white" href={`/depot-vente/${encodeURIComponent(id)}?action=sign`}>
+            Signer
+          </a>
         </div>
       </div>
 
@@ -212,9 +346,83 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
         </div>
       </div>
 
-      <div className="text-xs text-neutral-500">
-        Le PDF + l’envoi email juridique + le stockage du PDF signé arrivent dans le BLOC 2 (patch suivant).
-      </div>
+      {/* Signature zone (comme devis) */}
+      {signatureOpen && (
+        <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium">Signature du dépôt-vente</div>
+              <div className="text-xs text-neutral-600">
+                Nom + prénom + qualité, “Bon pour accord”, puis signature.
+              </div>
+            </div>
+
+            <a className="rounded-xl border px-3 py-2 text-xs" href={`/depot-vente/${encodeURIComponent(id)}`}>
+              Fermer
+            </a>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="text-sm">
+              <span className="text-neutral-600">Prénom</span>
+              <input className="mt-1 w-full rounded-xl border px-3 py-2" value={signerFirstName} onChange={(e) => setSignerFirstName(e.target.value)} />
+            </label>
+            <label className="text-sm">
+              <span className="text-neutral-600">Nom</span>
+              <input className="mt-1 w-full rounded-xl border px-3 py-2" value={signerLastName} onChange={(e) => setSignerLastName(e.target.value)} />
+            </label>
+            <label className="text-sm">
+              <span className="text-neutral-600">Qualité</span>
+              <input className="mt-1 w-full rounded-xl border px-3 py-2" value={signerRole} onChange={(e) => setSignerRole(e.target.value)} />
+            </label>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
+            <span>Bon pour accord</span>
+          </label>
+
+          <div className="rounded-2xl border p-3">
+            <div className="text-xs text-neutral-600 mb-2">Signature</div>
+            <canvas
+              ref={canvasRef}
+              className="w-full rounded-xl border bg-white touch-none"
+              onMouseDown={onDown}
+              onMouseMove={onMove}
+              onMouseUp={onUp}
+              onMouseLeave={onUp}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                onDown(e);
+              }}
+              onTouchMove={(e) => {
+                e.preventDefault();
+                onMove(e);
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                onUp();
+              }}
+            />
+            <div className="mt-2 flex items-center justify-between">
+              <button className="rounded-xl border px-3 py-2 text-xs" type="button" onClick={clearCanvas}>
+                Effacer
+              </button>
+
+              <button className="rounded-xl bg-black px-4 py-2 text-sm text-white" type="button" disabled={saving} onClick={submitSignature}>
+                {saving ? "Signature…" : "Signer et générer le PDF"}
+              </button>
+            </div>
+          </div>
+
+          {isSigned ? (
+            <div className="text-xs text-neutral-600">
+              Déjà signé : {String(sig?.signerLastName ?? "").toUpperCase()} {String(sig?.signerFirstName ?? "")} —{" "}
+              {String(sig?.signerRole ?? "Gérant")} · {fmtDateFR(sig?.signedAt ?? null)}
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

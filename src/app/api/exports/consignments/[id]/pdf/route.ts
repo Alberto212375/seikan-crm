@@ -22,6 +22,36 @@ function centsToEurosStr(cents: number) {
   return (cents / 100).toFixed(2).replace(".", ",");
 }
 
+type ConsignmentMeta = {
+  signature?: {
+    signerFirstName?: string;
+    signerLastName?: string;
+    signerRole?: string;
+    accepted?: boolean;
+    signedAt?: string;
+    signatureDataUrl?: string; // data:image/png;base64,...
+  };
+};
+
+function safeJsonParse<T>(s: any): T | null {
+  if (!s) return null;
+  try {
+    return JSON.parse(String(s)) as T;
+  } catch {
+    return null;
+  }
+}
+
+function dataUrlToBuffer(dataUrl: string) {
+  const m = String(dataUrl || "").match(/^data:image\/png;base64,(.+)$/);
+  if (!m) return null;
+  try {
+    return Buffer.from(m[1], "base64");
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(
   req: Request,
   { params }: { params: { id: string } }
@@ -42,7 +72,9 @@ export async function GET(
     return NextResponse.json({ error: "Dépôt-vente introuvable." }, { status: 404 });
   }
 
-  const isSigned = (c.status === "SIGNED") || (wantSigned && Boolean(c.signedAt));
+  const meta = safeJsonParse<ConsignmentMeta>((c as any).metaJson) ?? {};
+  const sig = meta?.signature ?? {};
+  const isSigned = Boolean((sig as any)?.accepted && (sig as any)?.signatureDataUrl);
 
   const totalQty = (c.items ?? []).reduce(
   (s: number, it: { qty: number | null }) => s + (it.qty || 0),
@@ -67,6 +99,17 @@ const totalValue = (c.items ?? []).reduce(
     doc.on("end", () => resolve(Buffer.concat(chunks)));
   });
 
+    // Footer (doit être branché AVANT tout addPage)
+  const addFooter = () => {
+    const bottom = doc.page.height - 40;
+    doc.font("Helvetica").fontSize(9).fillColor("#666666");
+    doc.text("SEIKAN GALLERY", 48, bottom, { align: "left" });
+    doc.text(`Contrat dépôt-vente ${c.number}`, 48, bottom, { align: "right" });
+    doc.fillColor("#000000");
+  };
+  addFooter();
+  doc.on("pageAdded", addFooter);
+
   // --- Header
   doc.font("Helvetica-Bold").fontSize(18).text("SEIKAN GALLERY", { align: "left" });
   doc.moveDown(0.25);
@@ -81,9 +124,12 @@ const totalValue = (c.items ?? []).reduce(
   doc.text(`Date de dépôt : ${fmtDateFR(c.depositDate)}`);
   doc.text(`Date de récupération : ${fmtDateFR(c.recoveryDate)} (durée : ${c.periodDays} jours)`);
 
-  if (isSigned) {
+    if (isSigned) {
     doc.moveDown(0.25);
-    doc.font("Helvetica-Bold").fontSize(11).text(`Statut : SIGNÉ le ${fmtDateFR(c.signedAt || new Date())}`);
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(11)
+      .text(`Statut : SIGNÉ le ${fmtDateFR((sig as any)?.signedAt || new Date())}`);
   }
 
   doc.moveDown(1.0);
@@ -196,32 +242,50 @@ const totalValue = (c.items ?? []).reduce(
   doc.strokeColor("#000000");
   doc.text("Nom : Xavier CUZIN", leftX, doc.y + 12 + boxH + 6);
 
-  // Dépositaire
+    // Dépositaire
   const rightX = leftX + 270;
   doc.text("Le Dépositaire (Client)", rightX, sigY + 16);
   doc.rect(rightX, sigY + 28, boxW, boxH).strokeColor("#999999").stroke();
   doc.strokeColor("#000000");
-  doc.text(`Nom : ${c.clientName || c.client?.displayName || "—"}`, rightX, sigY + 28 + boxH + 6);
 
+  // ✅ si signature présente, on l’intègre dans la case
   if (isSigned) {
+    const png = dataUrlToBuffer(String((sig as any)?.signatureDataUrl || ""));
+    if (png) {
+      // image centrée dans le cadre
+      const pad = 8;
+      const imgX = rightX + pad;
+      const imgY = sigY + 28 + pad;
+      const imgW = boxW - pad * 2;
+      const imgH = boxH - pad * 2;
+      try {
+        doc.image(png, imgX, imgY, { fit: [imgW, imgH] });
+      } catch {
+        // si image invalide, on ignore
+      }
+    }
+
+    // mentions sous la case
+    const ln = String((sig as any)?.signerLastName ?? "").toUpperCase();
+    const fn = String((sig as any)?.signerFirstName ?? "");
+    const role = String((sig as any)?.signerRole ?? "Gérant");
+    doc.font("Helvetica").fontSize(9).fillColor("#111111");
+    doc.text("Bon pour accord", rightX, sigY + 28 + boxH + 6);
+    doc.text(`Nom : ${ln} ${fn} — ${role}`, rightX, sigY + 28 + boxH + 18);
+    doc.text(`Signé le : ${fmtDateFR((sig as any)?.signedAt || new Date())}`, rightX, sigY + 28 + boxH + 30);
+    doc.fillColor("#000000");
+  } else {
+    // sinon on affiche juste le nom client
+    doc.text(`Nom : ${c.clientName || c.client?.displayName || "—"}`, rightX, sigY + 28 + boxH + 6);
+  }
+
+    if (isSigned) {
     doc.moveDown(0.6);
     doc.font("Helvetica-Bold").fontSize(10).text(
-      `Document signé le ${fmtDateFR(c.signedAt || new Date())}`,
+      `Document signé le ${fmtDateFR((sig as any)?.signedAt || new Date())}`,
       { align: "left" }
     );
   }
-
-  // Footer
-  doc.on("pageAdded", () => {});
-  const addFooter = () => {
-    const bottom = doc.page.height - 40;
-    doc.font("Helvetica").fontSize(9).fillColor("#666666");
-    doc.text("SEIKAN GALLERY", 48, bottom, { align: "left" });
-    doc.text(`Contrat dépôt-vente ${c.number}`, 48, bottom, { align: "right" });
-    doc.fillColor("#000000");
-  };
-  addFooter();
-  doc.on("pageAdded", addFooter);
 
   doc.end();
 

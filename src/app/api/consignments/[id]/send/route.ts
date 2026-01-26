@@ -68,10 +68,19 @@ export async function POST(
   const consignmentId = params.id;
 
   try {
-    const c = await prisma.consignment.findUnique({
+        const c = await prisma.consignment.findUnique({
       where: { id: consignmentId },
       include: { client: true, items: true },
     });
+
+    // ✅ déterminer si signé via metaJson.signature
+    let isSigned = false;
+    try {
+      const meta = JSON.parse(String((c as any)?.metaJson || "{}"));
+      isSigned = Boolean(meta?.signature?.accepted && meta?.signature?.signatureDataUrl);
+    } catch {
+      isSigned = false;
+    }
 
     if (!c) {
       return NextResponse.json({ error: "Dépôt-vente introuvable." }, { status: 404 });
@@ -92,7 +101,7 @@ export async function POST(
     const origin = new URL(req.url).origin;
     const cookie = req.headers.get("cookie") || "";
 
-    const pdfUrl = `${origin}/api/exports/consignments/${encodeURIComponent(consignmentId)}/pdf`;
+        const pdfUrl = `${origin}/api/exports/consignments/${encodeURIComponent(consignmentId)}/pdf${isSigned ? "?signed=1" : ""}`;
     const pdfResp = await fetch(pdfUrl, {
       headers: cookie ? { cookie } : undefined,
       cache: "no-store",
@@ -176,7 +185,7 @@ export async function POST(
       html: bodyHtml,
       attachments: [
         {
-          filename: `Depot-vente-${c.number}${c.status === "SIGNED" ? "-SIGNE" : ""}.pdf`,
+                    filename: `Depot-vente-${c.number}${isSigned ? "-SIGNE" : ""}.pdf`,
           content: pdf,
           contentType: "application/pdf",
         },
