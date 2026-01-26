@@ -110,3 +110,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: e?.message ?? "Erreur serveur" }, { status: 500 });
   }
 }
+
+// ✅ Compat : certains écrans envoient POST (ou PUT) par habitude.
+// On délègue vers PATCH pour ne pas casser l’UX.
+export async function POST(req: Request, ctx: { params: { id: string } }) {
+  return PATCH(req, ctx);
+}
+
+export async function PUT(req: Request, ctx: { params: { id: string } }) {
+  return PATCH(req, ctx);
+}
