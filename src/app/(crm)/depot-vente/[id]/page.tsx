@@ -82,7 +82,7 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
   const [accepted, setAccepted] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const drawing = useRef(false);
+  const drawingRef = useRef(false);
 
   const signatureOpen = action === "sign";
 
@@ -127,68 +127,103 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
     return { qty, value };
   }, [c]);
 
-  function clearCanvas() {
-    const cv = canvasRef.current;
-    if (!cv) return;
-    const ctx = cv.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, cv.width, cv.height);
-  }
-
-  function ensureCanvasBg() {
-    const cv = canvasRef.current;
-    if (!cv) return;
-    const ctx = cv.getContext("2d");
-    if (!ctx) return;
-    // fond blanc (sinon transparent)
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.strokeStyle = "#111";
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-  }
-
+  // ✅ Comme devis : bloquer le scroll quand la "modale" signature est ouverte
   useEffect(() => {
-    // init canvas
-    const cv = canvasRef.current;
-    if (!cv) return;
-    cv.width = 700;
-    cv.height = 220;
-    ensureCanvasBg();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!signatureOpen) return;
+
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevBodyOverscroll = (document.body.style as any).overscrollBehavior;
+
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    (document.body.style as any).overscrollBehavior = "contain";
+
+    return () => {
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+      (document.body.style as any).overscrollBehavior = prevBodyOverscroll;
+    };
   }, [signatureOpen]);
 
-  function getPos(e: any) {
-    const cv = canvasRef.current!;
-    const rect = cv.getBoundingClientRect();
-    const clientX = e.touches?.[0]?.clientX ?? e.clientX;
-    const clientY = e.touches?.[0]?.clientY ?? e.clientY;
-    return { x: clientX - rect.left, y: clientY - rect.top };
+  function clearCanvas() {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.strokeStyle = "#111111";
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
   }
 
-  function onDown(e: any) {
-    if (!canvasRef.current) return;
-    drawing.current = true;
-    const ctx = canvasRef.current.getContext("2d");
+  // ✅ Comme devis : init/calibrage canvas (width réel + height fixe + fond blanc)
+  useEffect(() => {
+    if (!signatureOpen) return;
+
+    const t = setTimeout(() => {
+      const c = canvasRef.current;
+      if (!c) return;
+      const ctx = c.getContext("2d");
+      if (!ctx) return;
+
+      const rect = c.getBoundingClientRect();
+      c.width = Math.max(300, Math.floor(rect.width));
+      c.height = 140;
+
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, c.width, c.height);
+
+      ctx.strokeStyle = "#111111";
+      ctx.lineWidth = 2.2;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+    }, 50);
+
+    return () => clearTimeout(t);
+  }, [signatureOpen]);
+
+  function getPos(e: any, canvas: HTMLCanvasElement) {
+    const r = canvas.getBoundingClientRect();
+    const t = e?.touches?.[0] || e?.changedTouches?.[0] || null;
+    const clientX = t ? t.clientX : e.clientX;
+    const clientY = t ? t.clientY : e.clientY;
+    return { x: clientX - r.left, y: clientY - r.top };
+  }
+
+  function startDraw(e: any) {
+    if (e?.preventDefault) e.preventDefault();
+
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext("2d");
     if (!ctx) return;
-    const p = getPos(e);
+
+    drawingRef.current = true;
+    const { x, y } = getPos(e, c);
     ctx.beginPath();
-    ctx.moveTo(p.x, p.y);
+    ctx.moveTo(x, y);
   }
 
-  function onMove(e: any) {
-    if (!drawing.current || !canvasRef.current) return;
-    const ctx = canvasRef.current.getContext("2d");
+  function moveDraw(e: any) {
+    if (e?.preventDefault) e.preventDefault();
+    if (!drawingRef.current) return;
+
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext("2d");
     if (!ctx) return;
-    const p = getPos(e);
-    ctx.lineTo(p.x, p.y);
+
+    const { x, y } = getPos(e, c);
+    ctx.lineTo(x, y);
     ctx.stroke();
   }
 
-  function onUp() {
-    drawing.current = false;
+  function endDraw() {
+    drawingRef.current = false;
   }
 
   async function submitSignature() {
@@ -214,7 +249,7 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
           signerFirstName: fn,
           signerLastName: ln,
           signerRole,
-          accepted,
+          accepted: true,
           signatureDataUrl: dataUrl,
         }),
       });
@@ -346,81 +381,95 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
         </div>
       </div>
 
-      {/* Signature zone (comme devis) */}
+      {/* ✅ Signature (MODALE comme devis : plein écran, anti-scroll, canvas doigt) */}
       {signatureOpen && (
-        <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-medium">Signature du dépôt-vente</div>
-              <div className="text-xs text-neutral-600">
-                Nom + prénom + qualité, “Bon pour accord”, puis signature.
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overscroll-contain"
+          onTouchMove={(e) => e.preventDefault()}
+        >
+          <div className="w-full max-w-3xl rounded-2xl border bg-white p-4 shadow-sm space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">Signature du dépôt-vente</div>
+                <div className="text-xs text-neutral-600">Nom + prénom + qualité, “Bon pour accord”, puis signature.</div>
+              </div>
+
+              <a className="rounded-xl border px-3 py-2 text-xs" href={`/depot-vente/${encodeURIComponent(id)}`}>
+                Fermer
+              </a>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="text-sm">
+                <span className="text-neutral-600">Prénom</span>
+                <input
+                  className="mt-1 w-full rounded-xl border px-3 py-2"
+                  value={signerFirstName}
+                  onChange={(e) => setSignerFirstName(e.target.value)}
+                />
+              </label>
+              <label className="text-sm">
+                <span className="text-neutral-600">Nom</span>
+                <input
+                  className="mt-1 w-full rounded-xl border px-3 py-2"
+                  value={signerLastName}
+                  onChange={(e) => setSignerLastName(e.target.value)}
+                />
+              </label>
+              <label className="text-sm">
+                <span className="text-neutral-600">Qualité</span>
+                <input
+                  className="mt-1 w-full rounded-xl border px-3 py-2"
+                  value={signerRole}
+                  onChange={(e) => setSignerRole(e.target.value)}
+                />
+              </label>
+            </div>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
+              <span>Bon pour accord</span>
+            </label>
+
+            <div className="rounded-2xl border p-3">
+              <div className="text-xs text-neutral-600 mb-2">Signature</div>
+
+              <canvas
+                ref={canvasRef}
+                className="w-full rounded-xl bg-white border touch-none select-none"
+                style={{ height: 140, touchAction: "none" as any }}
+                onMouseDown={startDraw}
+                onMouseMove={moveDraw}
+                onMouseUp={endDraw}
+                onMouseLeave={endDraw}
+                onTouchStart={startDraw}
+                onTouchMove={moveDraw}
+                onTouchEnd={endDraw}
+              />
+
+              <div className="mt-2 flex items-center justify-between">
+                <button className="rounded-xl border px-3 py-2 text-xs" type="button" onClick={clearCanvas}>
+                  Effacer
+                </button>
+
+                <button
+                  className="rounded-xl bg-black px-4 py-2 text-sm text-white"
+                  type="button"
+                  disabled={saving}
+                  onClick={submitSignature}
+                >
+                  {saving ? "Signature…" : "Signer et générer le PDF"}
+                </button>
               </div>
             </div>
 
-            <a className="rounded-xl border px-3 py-2 text-xs" href={`/depot-vente/${encodeURIComponent(id)}`}>
-              Fermer
-            </a>
+            {isSigned ? (
+              <div className="text-xs text-neutral-600">
+                Déjà signé : {String(sig?.signerLastName ?? "").toUpperCase()} {String(sig?.signerFirstName ?? "")} —{" "}
+                {String(sig?.signerRole ?? "Gérant")} · {fmtDateFR(sig?.signedAt ?? null)}
+              </div>
+            ) : null}
           </div>
-
-          <div className="grid gap-3 md:grid-cols-3">
-            <label className="text-sm">
-              <span className="text-neutral-600">Prénom</span>
-              <input className="mt-1 w-full rounded-xl border px-3 py-2" value={signerFirstName} onChange={(e) => setSignerFirstName(e.target.value)} />
-            </label>
-            <label className="text-sm">
-              <span className="text-neutral-600">Nom</span>
-              <input className="mt-1 w-full rounded-xl border px-3 py-2" value={signerLastName} onChange={(e) => setSignerLastName(e.target.value)} />
-            </label>
-            <label className="text-sm">
-              <span className="text-neutral-600">Qualité</span>
-              <input className="mt-1 w-full rounded-xl border px-3 py-2" value={signerRole} onChange={(e) => setSignerRole(e.target.value)} />
-            </label>
-          </div>
-
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
-            <span>Bon pour accord</span>
-          </label>
-
-          <div className="rounded-2xl border p-3">
-            <div className="text-xs text-neutral-600 mb-2">Signature</div>
-            <canvas
-              ref={canvasRef}
-              className="w-full rounded-xl border bg-white touch-none"
-              onMouseDown={onDown}
-              onMouseMove={onMove}
-              onMouseUp={onUp}
-              onMouseLeave={onUp}
-              onTouchStart={(e) => {
-                e.preventDefault();
-                onDown(e);
-              }}
-              onTouchMove={(e) => {
-                e.preventDefault();
-                onMove(e);
-              }}
-              onTouchEnd={(e) => {
-                e.preventDefault();
-                onUp();
-              }}
-            />
-            <div className="mt-2 flex items-center justify-between">
-              <button className="rounded-xl border px-3 py-2 text-xs" type="button" onClick={clearCanvas}>
-                Effacer
-              </button>
-
-              <button className="rounded-xl bg-black px-4 py-2 text-sm text-white" type="button" disabled={saving} onClick={submitSignature}>
-                {saving ? "Signature…" : "Signer et générer le PDF"}
-              </button>
-            </div>
-          </div>
-
-          {isSigned ? (
-            <div className="text-xs text-neutral-600">
-              Déjà signé : {String(sig?.signerLastName ?? "").toUpperCase()} {String(sig?.signerFirstName ?? "")} —{" "}
-              {String(sig?.signerRole ?? "Gérant")} · {fmtDateFR(sig?.signedAt ?? null)}
-            </div>
-          ) : null}
         </div>
       )}
     </div>
