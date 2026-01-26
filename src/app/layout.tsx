@@ -13,7 +13,8 @@ const nav = [
   { href: "/prospects", label: "Prospects" },
   { href: "/clients", label: "Clients" },
   { href: "/devis", label: "Devis" },
-  { href: "/commandes", label: "Commandes" }, // ✅ AJOUT ICI
+  { href: "/depot-vente", label: "Dépôt-vente" },
+  { href: "/commandes", label: "Commandes" },
   { href: "/facturation", label: "Facturation" },
   { href: "/archives", label: "Archives" },
   { href: "/settings", label: "Paramètres" },

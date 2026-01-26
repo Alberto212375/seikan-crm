@@ -38,9 +38,17 @@ enum InvoiceStatus {
   CANCELED
 }
 
+enum ConsignmentStatus {
+  DRAFT
+  GENERATED
+  SIGNED
+  CLOSED
+}
+
 enum DocumentType {
   QUOTE_PDF
   INVOICE_PDF
+  CONSIGNMENT_PDF
   CREDIT_NOTE_PDF
   OTHER
 }
@@ -109,11 +117,13 @@ model Client {
 
   notes String?
 
-  prospects  Prospect[]
-  quotes     Quote[]
-  invoices   Invoice[]
-  documents  Document[]
-  activities Activity[]
+  prospects    Prospect[]
+  quotes       Quote[]
+  invoices     Invoice[]
+  consignments Consignment[]
+  documents    Document[]
+  activities   Activity[]
+
 }
 
 model Quote {
@@ -259,8 +269,11 @@ model Document {
   invoiceId String?
   invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
-  clientId String?
+    clientId String?
   client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  consignmentId String?
+  consignment   Consignment? @relation(fields: [consignmentId], references: [id], onDelete: SetNull)
 }
 
 model Activity {
@@ -280,3 +293,59 @@ model Activity {
   clientId String?
   client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
+
+model Consignment {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // numérotation DV-YYYY-0001
+  seq    Int    @unique
+  number String @unique
+
+  status   ConsignmentStatus @default(DRAFT)
+  signedAt DateTime?
+
+  // client lié
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  // dates (jour J auto côté front, mais stockées ici)
+  depositDate   DateTime @default(now())
+  recoveryDate  DateTime
+  periodDays    Int
+
+  // email envoyé (badge “envoyé le …”)
+  emailSentAt    DateTime?
+  emailSentCount Int @default(0)
+
+  // snapshot client (pour pdf stable)
+  clientName    String
+  clientEmail   String?
+  clientPhone   String?
+  clientAddress String?
+
+  // items
+  items ConsignmentItem[]
+
+  // PDF généré (stockage dans Document)
+  documents Document[]
+}
+
+model ConsignmentItem {
+  id            String @id @default(cuid())
+  consignmentId String
+  consignment   Consignment @relation(fields: [consignmentId], references: [id], onDelete: Cascade)
+
+  // Posters (ou autres objets en dépôt)
+  ref    String
+  format String
+  nameFR String?
+  qty    Int @default(1)
+
+  // prix de “valeur” (comme devis selon volume) mais éditable à la main
+  unitPrice Int
+
+  sort Int @default(0)
+}
+
