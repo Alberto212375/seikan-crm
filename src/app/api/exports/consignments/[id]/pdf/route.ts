@@ -591,19 +591,21 @@ Conditions et obligations :
     doc.moveTo(left, y).lineTo(left + usableW, y).stroke();
     y += 10;
 
-    // Totaux (dépôt-vente)
-    y = addTotalLineAt(y, "TOTAL ARTICLES", totalQty * 100, false); // astuce: affichage à droite via euros()
-    // On remplace l’affichage “€” en gardant le mécanisme stable:
-    // => on écrase proprement la valeur en texte simple juste après
-    doc.save();
-    doc.font("base").fontSize(10).fillColor("black");
-    // on réécrit la valeur “Total articles : X” à gauche de la zone pour éviter ambiguïté €
+        // Totaux (dépôt-vente) — ✅ écriture unique (anti-chevauchement)
     const totalsX = left + (usableW - (320 + 110)) / 2;
-    doc.text(`Total articles : ${totalQty}`, totalsX, y - 14, { width: 320, align: "left" });
-    doc.text(`${centsToEurosStr(totalValue)} €`, totalsX + 320, y - 14, { width: 110, align: "right" });
+
+    doc.save();
+    doc.font("baseBold").fontSize(10).fillColor("black");
+    doc.text("Récapitulatif", totalsX, y, { width: 430, align: "left" });
+    y += 16;
+
+    doc.font("base").fontSize(10).fillColor("black");
+    doc.text(`Total articles : ${totalQty}`, totalsX, y, { width: 320, align: "left" });
+    doc.text(`${centsToEurosStr(totalValue)} €`, totalsX + 320, y, { width: 110, align: "right" });
+    y += 18;
     doc.restore();
 
-    y += 10;
+    y += 6;
 
     // Légal + signature (calque devis : shrink si besoin + image)
     const legalBottomY = FOOTER_SAFE_TOP - 6;

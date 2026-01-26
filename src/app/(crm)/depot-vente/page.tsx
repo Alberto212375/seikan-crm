@@ -348,6 +348,41 @@ function DepotList({
     return () => window.removeEventListener("resize", compute);
   }, []);
 
+    // ✅ Mémo dernier signataire (comme devis)
+  const SIGNER_STORAGE_KEY = "sg_last_signer_v1";
+
+  function loadLastSigner(): { firstName: string; lastName: string; role: string } | null {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(SIGNER_STORAGE_KEY);
+      if (!raw) return null;
+      const j = JSON.parse(raw);
+      return {
+        firstName: String(j?.firstName ?? "").trim(),
+        lastName: String(j?.lastName ?? "").trim(),
+        role: String(j?.role ?? "").trim(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function saveLastSigner(firstName: string, lastName: string, role: string) {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        SIGNER_STORAGE_KEY,
+        JSON.stringify({
+          firstName: String(firstName ?? "").trim(),
+          lastName: String(lastName ?? "").trim(),
+          role: String(role ?? "").trim(),
+        })
+      );
+    } catch {
+      // ignore
+    }
+  }
+
   async function refresh() {
     const r = await fetch("/api/consignments", { cache: "no-store" });
     const j = await r.json().catch(() => ({}));
@@ -424,20 +459,23 @@ function DepotList({
     };
   }, [signOpen]);
 
-  function openSignatureModal(row: ConsignmentRow) {
+    function openSignatureModal(row: ConsignmentRow) {
     // on ne peut signer que tablette + pas déjà signé
     if (!isTouch) return;
     if (isConsignmentSigned(row.metaJson)) return;
 
-    setSignerFirstName("");
-    setSignerLastName("");
-    setSignerRole("Gérant");
+    // ✅ pré-remplissage depuis dernier signataire mémorisé
+    const last = loadLastSigner();
+
+    setSignerFirstName(last?.firstName || "");
+    setSignerLastName(last?.lastName || "");
+    setSignerRole(last?.role || "Gérant");
     setBonPourAccord(false);
 
     setSignConsignmentId(row.id);
     setSignOpen(true);
 
-        setTimeout(() => {
+    setTimeout(() => {
       const c = canvasRef.current;
       if (!c) return;
       const ctx = c.getContext("2d");
@@ -542,11 +580,14 @@ function DepotList({
       return;
     }
 
-    const dataUrl = getSignatureDataUrl();
+        const dataUrl = getSignatureDataUrl();
     if (!dataUrl.startsWith("data:image/")) {
       alert("Signature invalide.");
       return;
     }
+
+    // ✅ mémorise pour les prochaines signatures
+    saveLastSigner(fn, ln, role);
 
     setSignSaving(true);
     try {
