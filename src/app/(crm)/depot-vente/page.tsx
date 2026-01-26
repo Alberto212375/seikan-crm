@@ -1,7 +1,7 @@
 // src/app/(crm)/depot-vente/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -162,16 +162,23 @@ function formatInternalToUi(f: PosterFormat): "30×40" | "A3" | "A2" {
 /* -------------------- Page -------------------- */
 
 export default function DepotVentePage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-6xl px-4 py-8 text-sm text-neutral-500">Chargement…</div>}>
+      <DepotVentePageInner />
+    </Suspense>
+  );
+}
+
+function DepotVentePageInner() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ConsignmentRow[]>([]);
   const [clients, setClients] = useState<ClientUi[]>([]);
-    const router = useRouter();
+  const router = useRouter();
   const sp = useSearchParams();
   const openId = sp.get("open") || "";
 
   const [openLoading, setOpenLoading] = useState(false);
   const [openDetail, setOpenDetail] = useState<any | null>(null);
-
 
   // create form
   const [clientId, setClientId] = useState("");
@@ -289,7 +296,7 @@ export default function DepotVentePage() {
     setRows((j.consignments ?? []) as ConsignmentRow[]);
   }
 
-    function setOpen(id: string) {
+  function setOpen(id: string) {
     const base = "/depot-vente";
     if (!id) router.replace(base);
     else router.replace(`${base}?open=${encodeURIComponent(id)}`);
@@ -332,9 +339,9 @@ export default function DepotVentePage() {
     return () => {
       alive = false;
     };
-    }, []);
+  }, []);
 
-  // ✅ 4D: charger automatiquement le panneau quand openId change
+  // ✅ charger automatiquement le panneau quand openId change
   useEffect(() => {
     loadOpen(openId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -382,8 +389,6 @@ export default function DepotVentePage() {
         unitPrice: eurosToCents(it.unitPriceEuros),
       })),
 
-      // ✅ optionnel : si plus tard tu veux stocker un “snapshot” complet,
-      // on ne casse rien côté API actuelle (elle ignore les champs inconnus).
       clientSnapshot: {
         isProfessional: Boolean(client?.isProfessional),
         societe: snapSociete,
@@ -417,539 +422,503 @@ export default function DepotVentePage() {
   }, []);
 
   return (
-  <div className="mx-auto max-w-6xl px-4 py-8">
-    <div className={`grid gap-6 ${openId ? "lg:grid-cols-[1fr_420px]" : ""}`}>
-      <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Dépôt-vente</h1>
-        <p className="mt-1 text-neutral-600">
-          Création, génération PDF, signature et envoi client (comme devis/factures).
-        </p>
-      </div>
+    <div className="mx-auto max-w-6xl px-4 py-8">
+      <div className={`grid gap-6 ${openId ? "lg:grid-cols-[1fr_420px]" : ""}`}>
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight">Dépôt-vente</h1>
+            <p className="mt-1 text-neutral-600">
+              Création, génération PDF, signature et envoi client (comme devis/factures).
+            </p>
+          </div>
 
-      {/* Création */}
-      <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-4">
-        <div className="text-sm font-medium">Créer un dépôt-vente</div>
+          {/* Création */}
+          <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-4">
+            <div className="text-sm font-medium">Créer un dépôt-vente</div>
 
-        {/* Client + Validité */}
-        <div className="grid gap-3 md:grid-cols-3">
-          <label className="text-sm md:col-span-2">
-            <span className="text-neutral-600">Client</span>
-            <select
-              className="mt-1 w-full rounded-xl border px-3 py-2"
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              disabled={loading}
-            >
-              <option value="">— sélectionner —</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {buildClientDisplayName(c)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm">
-            <span className="text-neutral-600">Validité</span>
-            <input
-              className="mt-1 w-full rounded-xl border px-3 py-2 bg-neutral-50"
-              value={validiteLabel}
-              readOnly
-              disabled
-            />
-          </label>
-        </div>
-
-        {/* Champs “comme devis” */}
-        {!client ? (
-          <div className="text-sm text-neutral-500">Sélectionne un client pour afficher les champs.</div>
-        ) : (
-          <>
+            {/* Client + Validité */}
             <div className="grid gap-3 md:grid-cols-3">
-              {client.isProfessional ? (
-                <>
-                  <label className="text-sm md:col-span-2">
-                    <span className="text-neutral-600">Société</span>
-                    <input
-                      className="mt-1 w-full rounded-xl border px-3 py-2"
-                      value={snapSociete}
-                      onChange={(e) => setSnapSociete(e.target.value)}
-                      placeholder="Société"
-                    />
-                  </label>
+              <label className="text-sm md:col-span-2">
+                <span className="text-neutral-600">Client</span>
+                <select
+                  className="mt-1 w-full rounded-xl border px-3 py-2"
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  disabled={loading}
+                >
+                  <option value="">— sélectionner —</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {buildClientDisplayName(c)}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-                  <label className="text-sm">
-                    <span className="text-neutral-600">Service</span>
-                    <input
-                      className="mt-1 w-full rounded-xl border px-3 py-2"
-                      value={snapService}
-                      onChange={(e) => setSnapService(e.target.value)}
-                      placeholder="Service"
-                    />
-                  </label>
-
-                  <label className="text-sm md:col-span-3">
-                    <span className="text-neutral-600">SIRET</span>
-                    <input
-                      className="mt-1 w-full rounded-xl border px-3 py-2"
-                      value={snapSiret}
-                      onChange={(e) => setSnapSiret(e.target.value)}
-                      placeholder="14 chiffres"
-                    />
-                  </label>
-
-                  <label className="text-sm">
-                    <span className="text-neutral-600">Nom (contact)</span>
-                    <input
-                      className="mt-1 w-full rounded-xl border px-3 py-2"
-                      value={snapLastName}
-                      onChange={(e) => setSnapLastName(e.target.value)}
-                    />
-                  </label>
-
-                  <label className="text-sm">
-                    <span className="text-neutral-600">Prénom (contact)</span>
-                    <input
-                      className="mt-1 w-full rounded-xl border px-3 py-2"
-                      value={snapFirstName}
-                      onChange={(e) => setSnapFirstName(e.target.value)}
-                    />
-                  </label>
-
-                  <div className="hidden md:block" />
-                </>
-              ) : (
-                <>
-                  <label className="text-sm">
-                    <span className="text-neutral-600">Nom</span>
-                    <input
-                      className="mt-1 w-full rounded-xl border px-3 py-2"
-                      value={snapLastName}
-                      onChange={(e) => setSnapLastName(e.target.value)}
-                    />
-                  </label>
-
-                  <label className="text-sm">
-                    <span className="text-neutral-600">Prénom</span>
-                    <input
-                      className="mt-1 w-full rounded-xl border px-3 py-2"
-                      value={snapFirstName}
-                      onChange={(e) => setSnapFirstName(e.target.value)}
-                    />
-                  </label>
-
-                  <div className="hidden md:block" />
-                </>
-              )}
+              <label className="text-sm">
+                <span className="text-neutral-600">Validité</span>
+                <input
+                  className="mt-1 w-full rounded-xl border px-3 py-2 bg-neutral-50"
+                  value={validiteLabel}
+                  readOnly
+                  disabled
+                />
+              </label>
             </div>
 
-            <div className="mt-2">
-              <div className="text-sm font-medium">Adresse de facturation (adresse client)</div>
-              <div className="mt-2 grid gap-3 md:grid-cols-3">
-                <label className="text-sm md:col-span-2">
-                  <span className="text-neutral-600">Rue</span>
-                  <input
-                    className="mt-1 w-full rounded-xl border px-3 py-2 text-sm bg-neutral-50"
-                    value={billingStreet}
-                    readOnly
-                    disabled
-                  />
-                </label>
-                <label className="text-sm">
-                  <span className="text-neutral-600">Code postal</span>
-                  <input
-                    className="mt-1 w-full rounded-xl border px-3 py-2 text-sm bg-neutral-50"
-                    value={billingPostalCode}
-                    readOnly
-                    disabled
-                  />
-                </label>
-                <label className="text-sm md:col-span-3">
-                  <span className="text-neutral-600">Ville</span>
-                  <input
-                    className="mt-1 w-full rounded-xl border px-3 py-2 text-sm bg-neutral-50"
-                    value={billingCity}
-                    readOnly
-                    disabled
-                  />
-                </label>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Dates dépôt */}
-        <div className="grid gap-3 md:grid-cols-4">
-          <label className="text-sm">
-            <span className="text-neutral-600">Date de dépôt (J)</span>
-            <input
-              type="date"
-              className="mt-1 w-full rounded-xl border px-3 py-2"
-              value={depositDate}
-              onChange={(e) => setDepositDate(e.target.value)}
-              disabled={loading}
-            />
-          </label>
-
-          <label className="text-sm">
-            <span className="text-neutral-600">Durée (jours)</span>
-            <input
-              className="mt-1 w-full rounded-xl border px-3 py-2"
-              value={periodDays}
-              onChange={(e) => setPeriodDays(e.target.value)}
-              disabled={loading}
-            />
-          </label>
-
-          <label className="text-sm md:col-span-2">
-            <span className="text-neutral-600">Date de récupération</span>
-            <input
-              type="date"
-              className="mt-1 w-full rounded-xl border px-3 py-2"
-              value={recoveryDate}
-              onChange={(e) => setRecoveryDate(e.target.value)}
-              disabled={loading}
-            />
-          </label>
-        </div>
-
-        {/* Items */}
-        <div className="rounded-2xl border overflow-hidden">
-          <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-            <table className="w-full min-w-[1180px] text-sm">
-              <thead className="bg-neutral-50 text-left text-neutral-600">
-                <tr>
-                  <th className="px-4 py-3 w-[320px]">Article</th>
-                  <th className="px-4 py-3 w-[120px]">Format</th>
-                  <th className="px-4 py-3 w-[140px]">Référence</th>
-                  <th className="px-4 py-3">Nom (JP)</th>
-                  <th className="px-4 py-3">Nom (FR)</th>
-                  <th className="px-4 py-3 w-[110px]">Qté</th>
-                  <th className="px-4 py-3 w-[140px]">PU auto (€)</th>
-                  <th className="px-4 py-3 w-[120px] text-right">Actions</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {items.map((it, idx) => (
-                  <tr key={it.id} className="border-t align-top">
-                    <td className="px-4 py-2">
-                      <select
-                        className="w-full rounded-xl border px-3 py-2"
-                        value={it.suffix}
-                        onChange={(e) => {
-                          const nextSuffix = e.target.value;
-                          setItems((p) =>
-                            p.map((x, i) =>
-                              i === idx ? syncItemFromSelection(x, x.format, nextSuffix) : x
-                            )
-                          );
-                        }}
-                      >
-                        {productOptions.map((o) => (
-                          <option key={o.suffix} value={o.suffix}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-
-                    <td className="px-4 py-2">
-                      <select
-                        className="w-full rounded-xl border px-3 py-2"
-                        value={it.format}
-                        onChange={(e) => {
-                          const nextFmt = e.target.value as any;
-                          setItems((p) =>
-                            p.map((x, i) =>
-                              i === idx ? syncItemFromSelection(x, nextFmt, x.suffix) : x
-                            )
-                          );
-                        }}
-                      >
-                        <option value="30×40">30×40</option>
-                        <option value="A3">A3</option>
-                        <option value="A2">A2</option>
-                      </select>
-                    </td>
-
-                    <td className="px-4 py-2">
-                      <input
-                        className="w-full rounded-xl border px-3 py-2 bg-neutral-50 tabular-nums"
-                        value={it.ref}
-                        readOnly
-                        disabled
-                      />
-                    </td>
-
-                    <td className="px-4 py-2">
-                      <input className="w-full rounded-xl border px-3 py-2 bg-neutral-50" value={it.nameJP} readOnly disabled />
-                    </td>
-
-                    <td className="px-4 py-2">
-                      <input className="w-full rounded-xl border px-3 py-2 bg-neutral-50" value={it.nameFR} readOnly disabled />
-                    </td>
-
-                    <td className="px-4 py-2">
-                      <input
-                        type="number"
-                        min={1}
-                        className="w-full rounded-xl border px-3 py-2"
-                        value={it.qty}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setItems((p) => p.map((x, i) => (i === idx ? { ...x, qty: v } : x)));
-                        }}
-                      />
-                    </td>
-
-                    <td className="px-4 py-2">
-                      <input
-                        className="w-full rounded-xl border px-3 py-2 bg-neutral-50 tabular-nums"
-                        value={it.unitPriceEuros}
-                        readOnly
-                        disabled
-                      />
-                    </td>
-
-                    <td className="px-4 py-2 text-right">
-                      <button
-                        className="rounded-xl border px-3 py-2 text-xs"
-                        onClick={() => setItems((p) => p.filter((_, i) => i !== idx))}
-                      >
-                        Suppr
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="border-t bg-white px-4 py-3 flex items-center justify-between">
-            <div className="text-xs text-neutral-600">
-              Total quantité (tous formats) :{" "}
-              <span className="font-medium text-neutral-900">{totalQtyAll}</span>
-            </div>
-
-            <button
-              className="rounded-xl border px-3 py-2 text-xs"
-              onClick={() => {
-                const p = getPosterBy("A3", "001");
-                setItems((prev) => [
-                  ...prev,
-                  {
-                    id: crypto.randomUUID(),
-                    format: "A3",
-                    suffix: "001",
-                    ref: p?.ref ?? "R-330001",
-                    nameJP: p?.jp ?? "-",
-                    nameFR: p?.fr ?? "-",
-                    qty: "10",
-                    unitPriceEuros: "",
-                  },
-                ]);
-              }}
-            >
-              + Ajouter une ligne
-            </button>
-          </div>
-        </div>
-
-        {/* ✅ Bouton tout en bas de l’encart dépôt-vente */}
-        <div className="pt-2 flex items-center justify-end">
-          <button
-            className="rounded-xl bg-black px-4 py-2 text-sm text-white disabled:opacity-60"
-            onClick={createConsignment}
-            disabled={loading}
-          >
-            Générer le dépôt (ligne + PDF ensuite)
-          </button>
-        </div>
-      </div>
-
-      {/* Liste */}
-      <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-          <table className="w-full min-w-[980px] text-sm">
-            <thead className="bg-neutral-50 text-left text-neutral-600">
-              <tr>
-                <th className="px-4 py-3 w-[170px]">N° Dépôt</th>
-                <th className="px-4 py-3">Client</th>
-                <th className="px-4 py-3 w-[140px]">Date dépôt</th>
-                <th className="px-4 py-3 w-[160px]">Date récupération</th>
-                <th className="px-4 py-3 w-[140px]">Total articles</th>
-                <th className="px-4 py-3 w-[280px] text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr className="border-t">
-                  <td colSpan={6} className="px-4 py-8 text-center text-neutral-500">
-                    Chargement…
-                  </td>
-                </tr>
-              ) : rows.length === 0 ? (
-                <tr className="border-t">
-                  <td colSpan={6} className="px-4 py-8 text-center text-neutral-500">
-                    Aucun dépôt-vente pour l’instant.
-                  </td>
-                </tr>
-              ) : (
-                rows.map((r) => (
-                  <tr key={r.id} className="border-t">
-                    <td className="px-4 py-3 font-medium tabular-nums">
-                      <span>{r.number}</span>
-                      {r.emailSentAt ? (
-                        <span className="ml-2 inline-flex items-center rounded-full bg-neutral-900 px-2 py-0.5 text-[11px] font-medium text-white">
-                          📧 Envoyé le {fmtDateFR(r.emailSentAt)}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-3">{r.client?.displayName ?? "—"}</td>
-                    <td className="px-4 py-3">{fmtDateFR(r.depositDate)}</td>
-                    <td className="px-4 py-3">{fmtDateFR(r.recoveryDate)}</td>
-                    <td className="px-4 py-3">{r.totalQty}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-  className="rounded-xl border px-3 py-2 text-xs"
-  onClick={() => setOpen(r.id)}
->
-  Ouvrir
-</button>
-
-                        <a
-                          className="rounded-xl border px-3 py-2 text-xs"
-                          href={`/api/exports/consignments/${encodeURIComponent(r.id)}/pdf`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          PDF
-                        </a>
-
-                        <button
-                          className="rounded-xl border px-3 py-2 text-xs"
-                          onClick={() =>
-                            (window.location.href = `/depot-vente/${encodeURIComponent(r.id)}?action=sign`)
-                          }
-                        >
-                          Signer
-                        </button>
-
-                        <button
-                          className="rounded-xl border px-3 py-2 text-xs"
-                          onClick={async () => {
-                            if (!confirm("Envoyer ce dépôt-vente au client par email ?")) return;
-
-                            const res = await fetch(`/api/consignments/${encodeURIComponent(r.id)}/send`, {
-                              method: "POST",
-                            });
-
-                            const j = await res.json().catch(() => ({}));
-                            if (!res.ok) return alert(j?.error ?? "Erreur envoi email");
-
-                            alert("Email envoyé au client ✅");
-                            await refresh();
-                          }}
-                        >
-                          {r.emailSentAt ? "Renvoyer" : "Envoyer au client"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-                        </tbody>
-          </table>
-        </div>
-      </div>
-
-      </div>
-
-      {/* Panneau détail via ?open= */}
-      {openId ? (
-        <div className="rounded-2xl border bg-white shadow-sm overflow-hidden h-fit sticky top-6">
-          <div className="border-b px-4 py-3 flex items-center justify-between">
-            <div className="text-sm font-medium">Détail dépôt-vente</div>
-            <button className="rounded-xl border px-3 py-2 text-xs" onClick={() => setOpen("")}>
-              Fermer
-            </button>
-          </div>
-
-          <div className="p-4 space-y-3">
-            {openLoading ? (
-              <div className="text-sm text-neutral-500">Chargement…</div>
-            ) : !openDetail ? (
-              <div className="text-sm text-neutral-500">Aucun détail.</div>
+            {/* Champs “comme devis” */}
+            {!client ? (
+              <div className="text-sm text-neutral-500">Sélectionne un client pour afficher les champs.</div>
             ) : (
               <>
-                <div>
-                  <div className="text-xl font-semibold tabular-nums">{openDetail.number}</div>
-                  <div className="mt-1 text-sm text-neutral-600">
-                    Client : <span className="font-medium text-neutral-900">{openDetail.client?.displayName ?? "—"}</span>
-                  </div>
-                  <div className="mt-1 text-xs text-neutral-500">
-                    Statut : <span className="font-medium">{openDetail.status}</span>
-                    {openDetail.emailSentAt ? <> · 📧 Envoyé le {fmtDateFR(openDetail.emailSentAt)}</> : null}
-                  </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {client.isProfessional ? (
+                    <>
+                      <label className="text-sm md:col-span-2">
+                        <span className="text-neutral-600">Société</span>
+                        <input
+                          className="mt-1 w-full rounded-xl border px-3 py-2"
+                          value={snapSociete}
+                          onChange={(e) => setSnapSociete(e.target.value)}
+                          placeholder="Société"
+                        />
+                      </label>
+
+                      <label className="text-sm">
+                        <span className="text-neutral-600">Service</span>
+                        <input
+                          className="mt-1 w-full rounded-xl border px-3 py-2"
+                          value={snapService}
+                          onChange={(e) => setSnapService(e.target.value)}
+                          placeholder="Service"
+                        />
+                      </label>
+
+                      <label className="text-sm md:col-span-3">
+                        <span className="text-neutral-600">SIRET</span>
+                        <input
+                          className="mt-1 w-full rounded-xl border px-3 py-2"
+                          value={snapSiret}
+                          onChange={(e) => setSnapSiret(e.target.value)}
+                          placeholder="14 chiffres"
+                        />
+                      </label>
+
+                      <label className="text-sm">
+                        <span className="text-neutral-600">Nom (contact)</span>
+                        <input
+                          className="mt-1 w-full rounded-xl border px-3 py-2"
+                          value={snapLastName}
+                          onChange={(e) => setSnapLastName(e.target.value)}
+                        />
+                      </label>
+
+                      <label className="text-sm">
+                        <span className="text-neutral-600">Prénom (contact)</span>
+                        <input
+                          className="mt-1 w-full rounded-xl border px-3 py-2"
+                          value={snapFirstName}
+                          onChange={(e) => setSnapFirstName(e.target.value)}
+                        />
+                      </label>
+
+                      <div className="hidden md:block" />
+                    </>
+                  ) : (
+                    <>
+                      <label className="text-sm">
+                        <span className="text-neutral-600">Nom</span>
+                        <input
+                          className="mt-1 w-full rounded-xl border px-3 py-2"
+                          value={snapLastName}
+                          onChange={(e) => setSnapLastName(e.target.value)}
+                        />
+                      </label>
+
+                      <label className="text-sm">
+                        <span className="text-neutral-600">Prénom</span>
+                        <input
+                          className="mt-1 w-full rounded-xl border px-3 py-2"
+                          value={snapFirstName}
+                          onChange={(e) => setSnapFirstName(e.target.value)}
+                        />
+                      </label>
+
+                      <div className="hidden md:block" />
+                    </>
+                  )}
                 </div>
 
-                <div className="grid gap-2 text-sm">
-                  <div className="rounded-xl border bg-neutral-50 px-3 py-2">
-                    Dépôt : <span className="font-medium">{fmtDateFR(openDetail.depositDate)}</span>
+                <div className="mt-2">
+                  <div className="text-sm font-medium">Adresse de facturation (adresse client)</div>
+                  <div className="mt-2 grid gap-3 md:grid-cols-3">
+                    <label className="text-sm md:col-span-2">
+                      <span className="text-neutral-600">Rue</span>
+                      <input
+                        className="mt-1 w-full rounded-xl border px-3 py-2 text-sm bg-neutral-50"
+                        value={billingStreet}
+                        readOnly
+                        disabled
+                      />
+                    </label>
+                    <label className="text-sm">
+                      <span className="text-neutral-600">Code postal</span>
+                      <input
+                        className="mt-1 w-full rounded-xl border px-3 py-2 text-sm bg-neutral-50"
+                        value={billingPostalCode}
+                        readOnly
+                        disabled
+                      />
+                    </label>
+                    <label className="text-sm md:col-span-3">
+                      <span className="text-neutral-600">Ville</span>
+                      <input
+                        className="mt-1 w-full rounded-xl border px-3 py-2 text-sm bg-neutral-50"
+                        value={billingCity}
+                        readOnly
+                        disabled
+                      />
+                    </label>
                   </div>
-                  <div className="rounded-xl border bg-neutral-50 px-3 py-2">
-                    Récupération : <span className="font-medium">{fmtDateFR(openDetail.recoveryDate)}</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <a
-                    className="rounded-xl border px-3 py-2 text-xs"
-                    href={`/depot-vente/${encodeURIComponent(openDetail.id)}`}
-                  >
-                    Page complète
-                  </a>
-
-                  <a
-                    className="rounded-xl border px-3 py-2 text-xs"
-                    href={`/api/exports/consignments/${encodeURIComponent(openDetail.id)}/pdf`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    PDF
-                  </a>
-
-                  <a
-                    className="rounded-xl border px-3 py-2 text-xs"
-                    href={`/depot-vente/${encodeURIComponent(openDetail.id)}?action=sign`}
-                  >
-                    Signer
-                  </a>
-
-                  <button
-                    className="rounded-xl border px-3 py-2 text-xs"
-                    onClick={async () => {
-                      if (!confirm("Envoyer ce dépôt-vente au client par email ?")) return;
-                      const res = await fetch(`/api/consignments/${encodeURIComponent(openDetail.id)}/send`, { method: "POST" });
-                      const j = await res.json().catch(() => ({}));
-                      if (!res.ok) return alert(j?.error ?? "Erreur envoi email");
-                      alert("Email envoyé au client ✅");
-                      await refresh();
-                      await loadOpen(openDetail.id);
-                    }}
-                  >
-                    {openDetail.emailSentAt ? "Renvoyer" : "Envoyer au client"}
-                  </button>
                 </div>
               </>
             )}
+
+            {/* Dates dépôt */}
+            <div className="grid gap-3 md:grid-cols-4">
+              <label className="text-sm">
+                <span className="text-neutral-600">Date de dépôt (J)</span>
+                <input
+                  type="date"
+                  className="mt-1 w-full rounded-xl border px-3 py-2"
+                  value={depositDate}
+                  onChange={(e) => setDepositDate(e.target.value)}
+                  disabled={loading}
+                />
+              </label>
+
+              <label className="text-sm">
+                <span className="text-neutral-600">Durée (jours)</span>
+                <input
+                  className="mt-1 w-full rounded-xl border px-3 py-2"
+                  value={periodDays}
+                  onChange={(e) => setPeriodDays(e.target.value)}
+                  disabled={loading}
+                />
+              </label>
+
+              <label className="text-sm md:col-span-2">
+                <span className="text-neutral-600">Date de récupération</span>
+                <input
+                  type="date"
+                  className="mt-1 w-full rounded-xl border px-3 py-2"
+                  value={recoveryDate}
+                  onChange={(e) => setRecoveryDate(e.target.value)}
+                  disabled={loading}
+                />
+              </label>
+            </div>
+
+            {/* Items */}
+            <div className="rounded-2xl border overflow-hidden">
+              <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
+                <table className="w-full min-w-[1180px] text-sm">
+                  <thead className="bg-neutral-50 text-left text-neutral-600">
+                    <tr>
+                      <th className="px-4 py-3 w-[320px]">Article</th>
+                      <th className="px-4 py-3 w-[120px]">Format</th>
+                      <th className="px-4 py-3 w-[140px]">Référence</th>
+                      <th className="px-4 py-3">Nom (JP)</th>
+                      <th className="px-4 py-3">Nom (FR)</th>
+                      <th className="px-4 py-3 w-[110px]">Qté</th>
+                      <th className="px-4 py-3 w-[140px]">PU auto (€)</th>
+                      <th className="px-4 py-3 w-[120px] text-right">Actions</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {items.map((it, idx) => (
+                      <tr key={it.id} className="border-t align-top">
+                        <td className="px-4 py-2">
+                          <select
+                            className="w-full rounded-xl border px-3 py-2"
+                            value={it.suffix}
+                            onChange={(e) => {
+                              const nextSuffix = e.target.value;
+                              setItems((p) =>
+                                p.map((x, i) => (i === idx ? syncItemFromSelection(x, x.format, nextSuffix) : x))
+                              );
+                            }}
+                          >
+                            {productOptions.map((o) => (
+                              <option key={o.suffix} value={o.suffix}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        <td className="px-4 py-2">
+                          <select
+                            className="w-full rounded-xl border px-3 py-2"
+                            value={it.format}
+                            onChange={(e) => {
+                              const nextFmt = e.target.value as any;
+                              setItems((p) =>
+                                p.map((x, i) => (i === idx ? syncItemFromSelection(x, nextFmt, x.suffix) : x))
+                              );
+                            }}
+                          >
+                            <option value="30×40">30×40</option>
+                            <option value="A3">A3</option>
+                            <option value="A2">A2</option>
+                          </select>
+                        </td>
+
+                        <td className="px-4 py-2">
+                          <input className="w-full rounded-xl border px-3 py-2 bg-neutral-50 tabular-nums" value={it.ref} readOnly disabled />
+                        </td>
+
+                        <td className="px-4 py-2">
+                          <input className="w-full rounded-xl border px-3 py-2 bg-neutral-50" value={it.nameJP} readOnly disabled />
+                        </td>
+
+                        <td className="px-4 py-2">
+                          <input className="w-full rounded-xl border px-3 py-2 bg-neutral-50" value={it.nameFR} readOnly disabled />
+                        </td>
+
+                        <td className="px-4 py-2">
+                          <input
+                            type="number"
+                            min={1}
+                            className="w-full rounded-xl border px-3 py-2"
+                            value={it.qty}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setItems((p) => p.map((x, i) => (i === idx ? { ...x, qty: v } : x)));
+                            }}
+                          />
+                        </td>
+
+                        <td className="px-4 py-2">
+                          <input className="w-full rounded-xl border px-3 py-2 bg-neutral-50 tabular-nums" value={it.unitPriceEuros} readOnly disabled />
+                        </td>
+
+                        <td className="px-4 py-2 text-right">
+                          <button className="rounded-xl border px-3 py-2 text-xs" onClick={() => setItems((p) => p.filter((_, i) => i !== idx))}>
+                            Suppr
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="border-t bg-white px-4 py-3 flex items-center justify-between">
+                <div className="text-xs text-neutral-600">
+                  Total quantité (tous formats) : <span className="font-medium text-neutral-900">{totalQtyAll}</span>
+                </div>
+
+                <button
+                  className="rounded-xl border px-3 py-2 text-xs"
+                  onClick={() => {
+                    const p = getPosterBy("A3", "001");
+                    setItems((prev) => [
+                      ...prev,
+                      {
+                        id: crypto.randomUUID(),
+                        format: "A3",
+                        suffix: "001",
+                        ref: p?.ref ?? "R-330001",
+                        nameJP: p?.jp ?? "-",
+                        nameFR: p?.fr ?? "-",
+                        qty: "10",
+                        unitPriceEuros: "",
+                      },
+                    ]);
+                  }}
+                >
+                  + Ajouter une ligne
+                </button>
+              </div>
+            </div>
+
+            {/* ✅ Bouton tout en bas de l’encart dépôt-vente */}
+            <div className="pt-2 flex items-center justify-end">
+              <button className="rounded-xl bg-black px-4 py-2 text-sm text-white disabled:opacity-60" onClick={createConsignment} disabled={loading}>
+                Générer le dépôt (ligne + PDF ensuite)
+              </button>
+            </div>
+          </div>
+
+          {/* Liste */}
+          <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
+            <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
+              <table className="w-full min-w-[980px] text-sm">
+                <thead className="bg-neutral-50 text-left text-neutral-600">
+                  <tr>
+                    <th className="px-4 py-3 w-[170px]">N° Dépôt</th>
+                    <th className="px-4 py-3">Client</th>
+                    <th className="px-4 py-3 w-[140px]">Date dépôt</th>
+                    <th className="px-4 py-3 w-[160px]">Date récupération</th>
+                    <th className="px-4 py-3 w-[140px]">Total articles</th>
+                    <th className="px-4 py-3 w-[280px] text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr className="border-t">
+                      <td colSpan={6} className="px-4 py-8 text-center text-neutral-500">
+                        Chargement…
+                      </td>
+                    </tr>
+                  ) : rows.length === 0 ? (
+                    <tr className="border-t">
+                      <td colSpan={6} className="px-4 py-8 text-center text-neutral-500">
+                        Aucun dépôt-vente pour l’instant.
+                      </td>
+                    </tr>
+                  ) : (
+                    rows.map((r) => (
+                      <tr key={r.id} className="border-t">
+                        <td className="px-4 py-3 font-medium tabular-nums">
+                          <span>{r.number}</span>
+                          {r.emailSentAt ? (
+                            <span className="ml-2 inline-flex items-center rounded-full bg-neutral-900 px-2 py-0.5 text-[11px] font-medium text-white">
+                              📧 Envoyé le {fmtDateFR(r.emailSentAt)}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-3">{r.client?.displayName ?? "—"}</td>
+                        <td className="px-4 py-3">{fmtDateFR(r.depositDate)}</td>
+                        <td className="px-4 py-3">{fmtDateFR(r.recoveryDate)}</td>
+                        <td className="px-4 py-3">{r.totalQty}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-2">
+                            <button className="rounded-xl border px-3 py-2 text-xs" onClick={() => setOpen(r.id)}>
+                              Ouvrir
+                            </button>
+
+                            <a
+                              className="rounded-xl border px-3 py-2 text-xs"
+                              href={`/api/exports/consignments/${encodeURIComponent(r.id)}/pdf`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              PDF
+                            </a>
+
+                            <button
+                              className="rounded-xl border px-3 py-2 text-xs"
+                              onClick={() => (window.location.href = `/depot-vente/${encodeURIComponent(r.id)}?action=sign`)}
+                            >
+                              Signer
+                            </button>
+
+                            <button
+                              className="rounded-xl border px-3 py-2 text-xs"
+                              onClick={async () => {
+                                if (!confirm("Envoyer ce dépôt-vente au client par email ?")) return;
+
+                                const res = await fetch(`/api/consignments/${encodeURIComponent(r.id)}/send`, { method: "POST" });
+                                const j = await res.json().catch(() => ({}));
+                                if (!res.ok) return alert(j?.error ?? "Erreur envoi email");
+
+                                alert("Email envoyé au client ✅");
+                                await refresh();
+                              }}
+                            >
+                              {r.emailSentAt ? "Renvoyer" : "Envoyer au client"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-      ) : null}
+
+        {/* Panneau détail via ?open= */}
+        {openId ? (
+          <div className="rounded-2xl border bg-white shadow-sm overflow-hidden h-fit sticky top-6">
+            <div className="border-b px-4 py-3 flex items-center justify-between">
+              <div className="text-sm font-medium">Détail dépôt-vente</div>
+              <button className="rounded-xl border px-3 py-2 text-xs" onClick={() => setOpen("")}>
+                Fermer
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              {openLoading ? (
+                <div className="text-sm text-neutral-500">Chargement…</div>
+              ) : !openDetail ? (
+                <div className="text-sm text-neutral-500">Aucun détail.</div>
+              ) : (
+                <>
+                  <div>
+                    <div className="text-xl font-semibold tabular-nums">{openDetail.number}</div>
+                    <div className="mt-1 text-sm text-neutral-600">
+                      Client :{" "}
+                      <span className="font-medium text-neutral-900">{openDetail.client?.displayName ?? "—"}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-neutral-500">
+                      Statut : <span className="font-medium">{openDetail.status}</span>
+                      {openDetail.emailSentAt ? <> · 📧 Envoyé le {fmtDateFR(openDetail.emailSentAt)}</> : null}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2 text-sm">
+                    <div className="rounded-xl border bg-neutral-50 px-3 py-2">
+                      Dépôt : <span className="font-medium">{fmtDateFR(openDetail.depositDate)}</span>
+                    </div>
+                    <div className="rounded-xl border bg-neutral-50 px-3 py-2">
+                      Récupération : <span className="font-medium">{fmtDateFR(openDetail.recoveryDate)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <a className="rounded-xl border px-3 py-2 text-xs" href={`/depot-vente/${encodeURIComponent(openDetail.id)}`}>
+                      Page complète
+                    </a>
+
+                    <a
+                      className="rounded-xl border px-3 py-2 text-xs"
+                      href={`/api/exports/consignments/${encodeURIComponent(openDetail.id)}/pdf`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      PDF
+                    </a>
+
+                    <a className="rounded-xl border px-3 py-2 text-xs" href={`/depot-vente/${encodeURIComponent(openDetail.id)}?action=sign`}>
+                      Signer
+                    </a>
+
+                    <button
+                      className="rounded-xl border px-3 py-2 text-xs"
+                      onClick={async () => {
+                        if (!confirm("Envoyer ce dépôt-vente au client par email ?")) return;
+                        const res = await fetch(`/api/consignments/${encodeURIComponent(openDetail.id)}/send`, { method: "POST" });
+                        const j = await res.json().catch(() => ({}));
+                        if (!res.ok) return alert(j?.error ?? "Erreur envoi email");
+                        alert("Email envoyé au client ✅");
+                        await refresh();
+                        await loadOpen(openDetail.id);
+                      }}
+                    >
+                      {openDetail.emailSentAt ? "Renvoyer" : "Envoyer au client"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
-  </div>
-);
+  );
 }
