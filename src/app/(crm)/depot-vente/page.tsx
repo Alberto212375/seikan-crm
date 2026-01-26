@@ -6,6 +6,58 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
+function Pagination({
+  page,
+  pageCount,
+  onPage,
+}: {
+  page: number;
+  pageCount: number;
+  onPage: (p: number) => void;
+}) {
+  if (pageCount <= 1) return null;
+
+  return (
+    <div className="flex items-center justify-end gap-2 pt-3">
+      <button
+        className="rounded-xl border px-3 py-2 text-xs disabled:opacity-40"
+        disabled={page <= 1}
+        onClick={() => onPage(1)}
+      >
+        ««
+      </button>
+
+      <button
+        className="rounded-xl border px-3 py-2 text-xs disabled:opacity-40"
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+      >
+        «
+      </button>
+
+      <div className="px-2 text-xs text-neutral-600 tabular-nums">
+        Page <span className="font-medium">{page}</span> / <span className="font-medium">{pageCount}</span>
+      </div>
+
+      <button
+        className="rounded-xl border px-3 py-2 text-xs disabled:opacity-40"
+        disabled={page >= pageCount}
+        onClick={() => onPage(page + 1)}
+      >
+        »
+      </button>
+
+      <button
+        className="rounded-xl border px-3 py-2 text-xs disabled:opacity-40"
+        disabled={page >= pageCount}
+        onClick={() => onPage(pageCount)}
+      >
+        »»
+      </button>
+    </div>
+  );
+}
+
 /* -------------------- Types -------------------- */
 
 type ClientUi = {
@@ -202,6 +254,9 @@ function DepotVenteInner() {
   const isNew = sp.get("new") === "1";
   const openId = sp.get("open") || "";
 
+  const pageParam = sp.get("page") || "1";
+  const page = Math.max(1, Math.floor(Number(pageParam) || 1));
+
   const createdNumber = sp.get("created") || "";
   const createdId = sp.get("createdId") || "";
 
@@ -211,15 +266,27 @@ function DepotVenteInner() {
     return <DepotCreateForm onBack={() => router.replace("/depot-vente")} />;
   }
 
-  return (
+    return (
     <DepotList
       openId={openId}
+      page={page}
       createdNumber={createdNumber}
       createdId={createdId}
       onCreate={() => router.replace("/depot-vente?new=1")}
       onOpen={(id) => {
-        if (!id) router.replace("/depot-vente");
-        else router.replace(`/depot-vente?open=${encodeURIComponent(id)}`);
+        const qs = new URLSearchParams();
+        if (id) qs.set("open", id);
+        if (page > 1) qs.set("page", String(page));
+        const url = qs.toString() ? `/depot-vente?${qs.toString()}` : "/depot-vente";
+        router.replace(url);
+      }}
+      onPage={(p) => {
+        const next = Math.max(1, p);
+        const qs = new URLSearchParams();
+        if (openId) qs.set("open", openId);
+        if (next > 1) qs.set("page", String(next));
+        const url = qs.toString() ? `/depot-vente?${qs.toString()}` : "/depot-vente";
+        router.replace(url);
       }}
     />
   );
@@ -229,19 +296,38 @@ function DepotVenteInner() {
 
 function DepotList({
   openId,
+  page,
   createdNumber,
   createdId,
   onCreate,
   onOpen,
+  onPage,
 }: {
   openId: string;
+  page: number;
   createdNumber: string;
   createdId: string;
   onCreate: () => void;
   onOpen: (id: string) => void;
+  onPage: (p: number) => void;
 }) {
+
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ConsignmentRow[]>([]);
+
+    // pagination (même esprit que Devis)
+  const PAGE_SIZE = 20;
+
+  const pageCount = useMemo(() => {
+    return Math.max(1, Math.ceil((rows?.length ?? 0) / PAGE_SIZE));
+  }, [rows]);
+
+  const safePage = Math.min(Math.max(1, page || 1), pageCount);
+
+  const pagedRows = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return (rows ?? []).slice(start, start + PAGE_SIZE);
+  }, [rows, safePage]);
 
   const [openLoading, setOpenLoading] = useState(false);
   const [openDetail, setOpenDetail] = useState<any | null>(null);
@@ -350,18 +436,28 @@ function DepotList({
     setSignConsignmentId(row.id);
     setSignOpen(true);
 
-    setTimeout(() => {
+        setTimeout(() => {
       const c = canvasRef.current;
       if (!c) return;
       const ctx = c.getContext("2d");
       if (!ctx) return;
 
       const rect = c.getBoundingClientRect();
-      c.width = Math.max(300, Math.floor(rect.width));
-      c.height = 140;
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+
+      const cssW = Math.max(300, Math.floor(rect.width));
+      const cssH = 140;
+
+      c.style.width = `${cssW}px`;
+      c.style.height = `${cssH}px`;
+      c.width = Math.floor(cssW * dpr);
+      c.height = Math.floor(cssH * dpr);
+
+      // 1 unité canvas = 1 pixel CSS
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       ctx.fillStyle = "#FFFFFF";
-      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.fillRect(0, 0, cssW, cssH);
 
       ctx.strokeStyle = "#111111";
       ctx.lineWidth = 2.2;
@@ -370,18 +466,26 @@ function DepotList({
     }, 50);
   }
 
-  function clearSignature() {
+    function clearSignature() {
     const c = canvasRef.current;
     if (!c) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
+
+    // Remplit correctement en repère "device" sans dépendre du transform DPR
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "#FFFFFF";
     ctx.fillRect(0, 0, c.width, c.height);
+    ctx.restore();
   }
 
   function getSignatureDataUrl(): string {
     const c = canvasRef.current;
     if (!c) return "";
+        // sécurité : si canvas pas initialisé correctement
+    const rect = c.getBoundingClientRect();
+    if (!rect.width) return "";
     return c.toDataURL("image/png");
   }
 
@@ -543,11 +647,11 @@ function DepotList({
                       Aucun dépôt-vente pour l’instant.
                     </td>
                   </tr>
-                ) : (
-                  rows.map((r) => {
+                                ) : (
+                  pagedRows.map((r) => {
                     const signed = isConsignmentSigned(r.metaJson);
-                    return (
-                      <tr key={r.id} className="border-t">
+                                        return (
+                      <tr key={r.id} className={`border-t ${signed ? "bg-yellow-50" : ""}`}>
                         <td className="px-4 py-3 md:px-5 md:py-4 font-medium tabular-nums">
                           <span>{r.number}</span>
 
@@ -627,6 +731,10 @@ function DepotList({
                 )}
               </tbody>
             </table>
+                    </div>
+
+          <div className="border-t bg-white px-4 py-3">
+            <Pagination page={safePage} pageCount={pageCount} onPage={onPage} />
           </div>
         </div>
 
@@ -670,37 +778,59 @@ function DepotList({
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <a className="rounded-xl border px-3 py-2 text-xs" href={`/depot-vente/${encodeURIComponent(openDetail.id)}`}>
-                      Page complète
-                    </a>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+  <a className="rounded-xl border px-3 py-2 text-xs" href={`/depot-vente/${encodeURIComponent(openDetail.id)}`}>
+    Page complète
+  </a>
 
-                    <a
-                      className="rounded-xl border px-3 py-2 text-xs"
-                      href={`/api/exports/consignments/${encodeURIComponent(openDetail.id)}/pdf`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      PDF
-                    </a>
+  <a
+    className="rounded-xl border px-3 py-2 text-xs"
+    href={`/api/exports/consignments/${encodeURIComponent(openDetail.id)}/pdf`}
+    target="_blank"
+    rel="noreferrer"
+  >
+    PDF
+  </a>
 
-                    <button
-                      className="rounded-xl border px-3 py-2 text-xs"
-                      onClick={async () => {
-                        if (!confirm("Envoyer ce dépôt-vente au client par email ?")) return;
-                        const res = await fetch(`/api/consignments/${encodeURIComponent(openDetail.id)}/send`, {
-                          method: "POST",
-                        });
-                        const j = await res.json().catch(() => ({}));
-                        if (!res.ok) return alert(j?.error ?? "Erreur envoi email");
-                        alert("Email envoyé au client ✅");
-                        await refresh();
-                        await loadOpen(openDetail.id);
-                      }}
-                    >
-                      {openDetail.emailSentAt ? "Renvoyer" : "Envoyer au client"}
-                    </button>
-                  </div>
+  {isTouch && !isConsignmentSigned(openDetail?.metaJson ?? null) ? (
+    <button
+      type="button"
+      className="rounded-xl border px-3 py-2 text-xs"
+      onClick={() =>
+        openSignatureModal({
+          id: openDetail.id,
+          metaJson: openDetail?.metaJson ?? null,
+        } as any)
+      }
+      title="Signature tablette uniquement"
+    >
+      Signer
+    </button>
+  ) : null}
+
+  {isTouch && isConsignmentSigned(openDetail?.metaJson ?? null) ? (
+    <div className="rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700 border border-emerald-200">
+      Signé
+    </div>
+  ) : null}
+
+  <button
+    className="rounded-xl border px-3 py-2 text-xs"
+    onClick={async () => {
+      if (!confirm("Envoyer ce dépôt-vente au client par email ?")) return;
+      const res = await fetch(`/api/consignments/${encodeURIComponent(openDetail.id)}/send`, {
+        method: "POST",
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) return alert(j?.error ?? "Erreur envoi email");
+      alert("Email envoyé au client ✅");
+      await refresh();
+      await loadOpen(openDetail.id);
+    }}
+  >
+    {openDetail.emailSentAt ? "Renvoyer" : "Envoyer au client"}
+  </button>
+</div>
                 </>
               )}
             </div>
@@ -966,13 +1096,6 @@ function DepotCreateForm({ onBack }: { onBack: () => void }) {
     };
   }
 
-  const productOptions = useMemo(() => {
-    return POSTERS.A3.map((p) => ({
-      suffix: p.suffix,
-      label: `#${p.suffix} — ${p.jp} — ${p.fr}`,
-    }));
-  }, []);
-
   async function createConsignment() {
     if (!clientId) return alert("Choisis un client.");
 
@@ -1187,11 +1310,11 @@ function DepotCreateForm({ onBack }: { onBack: () => void }) {
                           setItems((p) => p.map((x, i) => (i === idx ? syncItemFromSelection(x, x.format, nextSuffix) : x)));
                         }}
                       >
-                        {productOptions.map((o) => (
-                          <option key={o.suffix} value={o.suffix}>
-                            {o.label}
-                          </option>
-                        ))}
+                        {POSTERS[formatUiToInternal(it.format)].map((p) => (
+  <option key={p.suffix} value={p.suffix}>
+    #{p.suffix} — {p.jp} — {p.fr}
+  </option>
+))}
                       </select>
                     </td>
 
