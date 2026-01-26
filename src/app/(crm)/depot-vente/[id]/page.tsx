@@ -146,21 +146,28 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
     };
   }, [signatureOpen]);
 
-  function clearCanvas() {
+    function clearCanvas() {
     const c = canvasRef.current;
     if (!c) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, c.width, c.height);
+
+    const r = c.getBoundingClientRect();
+    const cssW = Math.max(1, Math.floor(r.width));
+    const cssH = 140;
+
+    // ctx est en "unités CSS" (car on setTransform avec DPR)
+    ctx.clearRect(0, 0, cssW, cssH);
     ctx.fillStyle = "#FFFFFF";
-    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillRect(0, 0, cssW, cssH);
+
     ctx.strokeStyle = "#111111";
     ctx.lineWidth = 2.2;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
   }
 
-  // ✅ Comme devis : init/calibrage canvas (width réel + height fixe + fond blanc)
+    // ✅ Calibrage canvas correct (DPR) => plus de décalage doigt/stylet
   useEffect(() => {
     if (!signatureOpen) return;
 
@@ -171,12 +178,26 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
       if (!ctx) return;
 
       const rect = c.getBoundingClientRect();
-      c.width = Math.max(300, Math.floor(rect.width));
-      c.height = 140;
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
 
+      // taille CSS (ce que tu vois)
+      const cssW = Math.max(300, Math.floor(rect.width));
+      const cssH = 140;
+
+      // taille interne en pixels réels (retina)
+      c.style.width = `${cssW}px`;
+      c.style.height = `${cssH}px`;
+      c.width = Math.floor(cssW * dpr);
+      c.height = Math.floor(cssH * dpr);
+
+      // 1 unité canvas = 1 pixel CSS
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      // fond blanc
       ctx.fillStyle = "#FFFFFF";
-      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.fillRect(0, 0, cssW, cssH);
 
+      // style trait
       ctx.strokeStyle = "#111111";
       ctx.lineWidth = 2.2;
       ctx.lineCap = "round";
@@ -186,12 +207,17 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
     return () => clearTimeout(t);
   }, [signatureOpen]);
 
-  function getPos(e: any, canvas: HTMLCanvasElement) {
+    function getPos(e: any, canvas: HTMLCanvasElement) {
     const r = canvas.getBoundingClientRect();
     const t = e?.touches?.[0] || e?.changedTouches?.[0] || null;
     const clientX = t ? t.clientX : e.clientX;
     const clientY = t ? t.clientY : e.clientY;
-    return { x: clientX - r.left, y: clientY - r.top };
+
+    // coordonnées en pixels CSS (et ctx est déjà "scalé DPR")
+    const x = clientX - r.left;
+    const y = clientY - r.top;
+
+    return { x, y };
   }
 
   function startDraw(e: any) {
