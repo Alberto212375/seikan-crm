@@ -66,6 +66,41 @@ function safeMeta(s: string | null | undefined): ConsignmentMeta {
   }
 }
 
+// ✅ Mémo dernier signataire (comme devis / liste dépôt-vente)
+const SIGNER_STORAGE_KEY = "sg_last_signer_v1";
+
+function loadLastSigner(): { firstName: string; lastName: string; role: string } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(SIGNER_STORAGE_KEY);
+    if (!raw) return null;
+    const j = JSON.parse(raw);
+    return {
+      firstName: String(j?.firstName ?? "").trim(),
+      lastName: String(j?.lastName ?? "").trim(),
+      role: String(j?.role ?? "").trim(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveLastSigner(firstName: string, lastName: string, role: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      SIGNER_STORAGE_KEY,
+      JSON.stringify({
+        firstName: String(firstName ?? "").trim(),
+        lastName: String(lastName ?? "").trim(),
+        role: String(role ?? "").trim(),
+      })
+    );
+  } catch {
+    // ignore
+  }
+}
+
 export default function DepotVenteDetailPage({ params }: { params: { id: string } }) {
   const id = params.id;
   const sp = useSearchParams();
@@ -85,6 +120,19 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
   const drawingRef = useRef(false);
 
   const signatureOpen = action === "sign";
+
+    // ✅ Pré-remplissage automatique à l’ouverture (comme devis)
+  useEffect(() => {
+    if (!signatureOpen) return;
+
+    const last = loadLastSigner();
+    if (!last) return;
+
+    // on ne force pas si déjà rempli (ex: si déjà signé => champs hydratés)
+    setSignerFirstName((v) => (String(v || "").trim() ? v : last.firstName));
+    setSignerLastName((v) => (String(v || "").trim() ? v : last.lastName));
+    setSignerRole((v) => (String(v || "").trim() ? v : last.role || "Gérant"));
+  }, [signatureOpen]);
 
   async function load() {
     const r = await fetch(`/api/consignments/${encodeURIComponent(id)}`, { cache: "no-store" });
@@ -263,8 +311,11 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
     const cv = canvasRef.current;
     if (!cv) return alert("Canvas signature introuvable.");
 
-    const dataUrl = cv.toDataURL("image/png");
+           const dataUrl = cv.toDataURL("image/png");
     if (!dataUrl.startsWith("data:image/")) return alert("Signature invalide.");
+
+    // ✅ mémorise pour les prochaines signatures
+    saveLastSigner(fn, ln, signerRole);
 
     setSaving(true);
     try {
