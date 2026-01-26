@@ -104,6 +104,15 @@ type ConsignmentRow = {
 };
 
 type ConsignmentMeta = {
+  party?: {
+    isProfessional?: boolean;
+    societe?: string;
+    service?: string;
+    siret?: string;
+    lastName?: string;
+    firstName?: string;
+  };
+
   signature?: {
     signerFirstName?: string;
     signerLastName?: string;
@@ -464,11 +473,17 @@ function DepotList({
     if (!isTouch) return;
     if (isConsignmentSigned(row.metaJson)) return;
 
-    // ✅ pré-remplissage depuis dernier signataire mémorisé
+        const meta = safeJsonParse<ConsignmentMeta>(row.metaJson ?? null) ?? {};
+    const party = meta.party ?? {};
+
+    const partyFn = String(party.firstName ?? "").trim();
+    const partyLn = String(party.lastName ?? "").trim();
+
+    // fallback si pas de party (anciens dépôts) => dernier signataire mémorisé
     const last = loadLastSigner();
 
-    setSignerFirstName(last?.firstName || "");
-    setSignerLastName(last?.lastName || "");
+    setSignerFirstName(partyFn || last?.firstName || "");
+    setSignerLastName(partyLn || last?.lastName || "");
     setSignerRole(last?.role || "Gérant");
     setBonPourAccord(false);
 

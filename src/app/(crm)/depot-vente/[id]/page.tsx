@@ -47,6 +47,15 @@ type Detail = {
 };
 
 type ConsignmentMeta = Partial<{
+  party: Partial<{
+    isProfessional: boolean;
+    societe: string;
+    service: string;
+    siret: string;
+    lastName: string;
+    firstName: string;
+  }>;
+
   signature: Partial<{
     signerFirstName: string;
     signerLastName: string;
@@ -56,7 +65,6 @@ type ConsignmentMeta = Partial<{
     signatureDataUrl: string;
   }>;
 }>;
-
 function safeMeta(s: string | null | undefined): ConsignmentMeta {
   if (!s) return {};
   try {
@@ -123,16 +131,22 @@ export default function DepotVenteDetailPage({ params }: { params: { id: string 
 
     // ✅ Pré-remplissage automatique à l’ouverture (comme devis)
   useEffect(() => {
-    if (!signatureOpen) return;
+  if (!signatureOpen) return;
 
-    const last = loadLastSigner();
-    if (!last) return;
+  // 1) on tente de prendre le signataire depuis le client du dépôt (meta.party)
+  const meta = safeMeta((c as any)?.metaJson ?? null);
+  const party = (meta as any)?.party ?? {};
 
-    // on ne force pas si déjà rempli (ex: si déjà signé => champs hydratés)
-    setSignerFirstName((v) => (String(v || "").trim() ? v : last.firstName));
-    setSignerLastName((v) => (String(v || "").trim() ? v : last.lastName));
-    setSignerRole((v) => (String(v || "").trim() ? v : last.role || "Gérant"));
-  }, [signatureOpen]);
+  const partyFn = String(party?.firstName ?? "").trim();
+  const partyLn = String(party?.lastName ?? "").trim();
+
+  // 2) fallback : dernier signataire mémorisé
+  const last = loadLastSigner();
+
+  setSignerFirstName((v) => (String(v || "").trim() ? v : partyFn || last?.firstName || ""));
+  setSignerLastName((v) => (String(v || "").trim() ? v : partyLn || last?.lastName || ""));
+  setSignerRole((v) => (String(v || "").trim() ? v : last?.role || "Gérant"));
+}, [signatureOpen, c]);
 
   async function load() {
     const r = await fetch(`/api/consignments/${encodeURIComponent(id)}`, { cache: "no-store" });

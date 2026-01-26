@@ -15,6 +15,11 @@ function addDaysLocal(date: Date, days: number) {
   return d;
 }
 
+function normalize(s: unknown) {
+  return String(s ?? "").trim();
+}
+
+
 export async function GET() {
   const consignments = await prisma.consignment.findMany({
     orderBy: { createdAt: "desc" },
@@ -48,6 +53,9 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
+        const snap = body?.clientSnapshot ?? {};
+    const snapBilling = snap?.billing ?? {};
+
 
     const clientId = String(body?.clientId || "").trim();
     if (!clientId) {
@@ -104,7 +112,23 @@ export async function POST(req: Request) {
         clientPhone: client.phone,
         clientAddress: client.shippingAddress || client.billingAddress || null,
 
+                metaJson: JSON.stringify({
+          party: {
+            isProfessional: Boolean(snap?.isProfessional),
+            societe: normalize(snap?.societe),
+            service: normalize(snap?.service),
+            siret: normalize(snap?.siret),
+            lastName: normalize(snap?.lastName),
+            firstName: normalize(snap?.firstName),
+          },
+          billingAddress: {
+            street: normalize(snapBilling?.street),
+            postalCode: normalize(snapBilling?.postalCode),
+            city: normalize(snapBilling?.city),
+          },
+        }),
         items: { create: items },
+
       },
       include: {
         client: { select: { id: true, displayName: true } },
