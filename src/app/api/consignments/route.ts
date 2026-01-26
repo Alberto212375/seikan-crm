@@ -27,16 +27,19 @@ export async function GET() {
   const rows = consignments.map((c) => {
     const totalQty = (c.items ?? []).reduce((s: number, it: { qty: number | null }) => s + (it.qty || 0), 0);
     return {
-      id: c.id,
-      number: c.number,
-      status: c.status,
-      client: c.client,
-      depositDate: iso(c.depositDate),
-      recoveryDate: iso(c.recoveryDate),
-      totalQty,
-      emailSentAt: c.emailSentAt ? iso(c.emailSentAt) : null,
-      emailSentCount: c.emailSentCount ?? 0,
-    };
+  id: c.id,
+  number: c.number,
+  status: c.status,
+  client: c.client,
+  depositDate: iso(c.depositDate),
+  recoveryDate: iso(c.recoveryDate),
+  totalQty,
+  emailSentAt: c.emailSentAt ? iso(c.emailSentAt) : null,
+  emailSentCount: c.emailSentCount ?? 0,
+
+  // ✅ indispensable pour que la liste affiche "Signé" (vert/jaune)
+  metaJson: c.metaJson ?? null,
+};
   });
 
   return NextResponse.json({ consignments: rows });

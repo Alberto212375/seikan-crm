@@ -153,7 +153,8 @@ function getSignatureFromMeta(metaJson: string | null | undefined) {
 
 function isConsignmentSigned(metaJson: string | null | undefined) {
   const sig = getSignatureFromMeta(metaJson);
-  return Boolean(sig?.accepted && sig?.signedAt && sig?.signatureDataUrl);
+  // ✅ même logique que la page détail (et devis) : signedAt est optionnel
+  return Boolean(sig?.accepted && sig?.signatureDataUrl);
 }
 
 function fmtDateFRLongIso(iso: string) {
@@ -831,6 +832,7 @@ function DepotList({
     {openDetail.emailSentAt ? "Renvoyer" : "Envoyer au client"}
   </button>
 </div>
+
                 </>
               )}
             </div>
