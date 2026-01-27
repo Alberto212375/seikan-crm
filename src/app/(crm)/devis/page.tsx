@@ -297,9 +297,32 @@ const POSTERS: Record<PosterFormat, PosterRef[]> = {
   ],
 };
 
-function calcUnitPriceEuros(format: PosterFormat, totalUnitsInFormat: number) {
-  const base =
-    totalUnitsInFormat >= 50 ? 12 : totalUnitsInFormat >= 25 ? 14 : totalUnitsInFormat >= 10 ? 16 : 18;
+type PaperWeight = "250g" | "135g";
+
+function calcUnitPriceEuros(format: PosterFormat, totalUnitsInFormat: number, paper: PaperWeight) {
+  let base: number;
+
+  // ✅ 250g = règle actuelle
+  if (paper === "250g") {
+    base =
+      totalUnitsInFormat >= 50
+        ? 12
+        : totalUnitsInFormat >= 25
+        ? 14
+        : totalUnitsInFormat >= 10
+        ? 16
+        : 18;
+  } else {
+    // ✅ 135g = nouvelle règle
+    base =
+      totalUnitsInFormat >= 25
+        ? 10
+        : totalUnitsInFormat >= 10
+        ? 12
+        : 14; // 1–9
+  }
+
+  // ✅ A2 garde le +8€ (comme ton système actuel)
   return format === "A2" ? base + 8 : base;
 }
 
@@ -1050,6 +1073,11 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
   const [firstOrder, setFirstOrder] = useState<boolean>(false);
   const [vatExempt, setVatExempt] = useState<boolean>(true);
 
+    // ✅ Impression / Colisage
+  const [paperWeight, setPaperWeight] = useState<PaperWeight>("250g"); // 250g = règle actuelle
+  const [packaging, setPackaging] = useState<"tube" | "vrac">("vrac"); // vrac par défaut
+
+
   // ✅ Paiement différé (acompte 50% / solde 50%) — par défaut NON
   const [deferredPayment, setDeferredPayment] = useState<boolean>(false);
 
@@ -1229,7 +1257,8 @@ next[ref.ref] = minQty;
       const totalUnitsInFormat = formatTotals[fmt];
       if (totalUnitsInFormat <= 0) return;
 
-      const unit = calcUnitPriceEuros(fmt, totalUnitsInFormat);
+            const packagingExtra = packaging === "tube" ? 1.5 : 0;
+      const unit = calcUnitPriceEuros(fmt, totalUnitsInFormat, paperWeight) + packagingExtra;
 
       for (const s of selectionsByFormat[fmt]) {
         const q = Math.max(1, qtyEffective[s.ref.ref] ?? s.qty ?? 1);
@@ -1262,17 +1291,22 @@ next[ref.ref] = minQty;
     const depositHT = Math.round((totalHT * depositPct) / 100);
     const balanceHT = totalHT - depositHT;
 
+        // ✅ Nouvelle règle :
+    // - minimum 1 poster (pas de minimum 10 par format)
+    // - SAUF si la commande est "A2 uniquement" => minimum 10 posters au total en A2
     const formatErrors: Record<PosterFormat, string | null> = { "30x40": null, A3: null, A2: null };
-    (Object.keys(selectionsByFormat) as PosterFormat[]).forEach((fmt) => {
-      const refCount = selectionsByFormat[fmt].length;
-      if (refCount === 0) return;
-      const totalUnits = outLines.filter((l) => l.format === fmt).reduce((s, l) => s + l.qty, 0);
-      if (totalUnits < 10) {
-        formatErrors[fmt] = `Minimum de 10 posters requis pour le format ${fmt}.`;
-      }
-    });
 
-    const hasMinError = Boolean(formatErrors["30x40"] || formatErrors.A3 || formatErrors.A2);
+    const selectedFormats = (Object.keys(formatTotals) as PosterFormat[]).filter((fmt) => (formatTotals[fmt] || 0) > 0);
+
+    const isA2Only = selectedFormats.length === 1 && selectedFormats[0] === "A2";
+    if (isA2Only) {
+      const totalA2 = formatTotals.A2 || 0;
+      if (totalA2 < 10) {
+        formatErrors.A2 = "Minimum de 10 posters requis si la commande est en A2 uniquement.";
+      }
+    }
+
+    const hasMinError = Boolean(formatErrors.A2);
 
     return {
       outLines,
@@ -1293,7 +1327,7 @@ next[ref.ref] = minQty;
       hasMinError,
       qtyEffective,
     };
-  }, [selectionsByFormat, firstOrder, discountAppliedPct, vatExempt, qtyByRef, deferredPayment]);
+    }, [selectionsByFormat, firstOrder, discountAppliedPct, vatExempt, qtyByRef, deferredPayment, paperWeight, packaging]);
 
   async function createQuote() {
     if (!client) {
@@ -1334,8 +1368,8 @@ next[ref.ref] = minQty;
       return;
     }
 
-    if (computed.hasMinError) {
-      alert("Commande bloquée : minimum de 10 affiches requis par format sélectionné.");
+        if (computed.hasMinError) {
+      alert("Commande bloquée : minimum de 10 posters requis si la commande est en A2 uniquement.");
       return;
     }
 
@@ -1355,13 +1389,15 @@ next[ref.ref] = minQty;
 
       validDays: 1,
 
-      posters: {
+            posters: {
         firstOrder,
         vatExempt,
         deferredPayment,
         closingDate: closureObj.key,
         deliveryWindowLabel,
         discountAppliedPct,
+        paperWeight,
+        packaging,
         selectionOrderByFmt,
         selections: computed.outLines.map((l) => ({
           format: l.format,
@@ -1385,13 +1421,15 @@ next[ref.ref] = minQty;
         delivery: {
           address: deliveryWindowLabel,
         },
-        posters: {
+                posters: {
           firstOrder,
           vatExempt,
           deferredPayment,
           closingDate: closureObj.key,
           deliveryWindowLabel,
           discountAppliedPct,
+          paperWeight,
+          packaging,
         },
       }),
     };
@@ -1569,6 +1607,47 @@ const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={firstOrder} onChange={(e) => setFirstOrder(e.target.checked)} />
             <span className="font-medium">Première commande</span>
+          </label>
+        </div>
+
+                {/* ✅ Choix impression / Colisage */}
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <label className="text-sm">
+            <span className="text-neutral-600">Choix d’impression</span>
+            <select
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={paperWeight}
+              onChange={(e) => setPaperWeight(e.target.value as PaperWeight)}
+            >
+              <option value="135g">135g</option>
+              <option value="250g">250g</option>
+            </select>
+          </label>
+
+          <label className="text-sm">
+            <span className="text-neutral-600">Colisage</span>
+            <select
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={packaging}
+              onChange={(e) => setPackaging(e.target.value as "tube" | "vrac")}
+            >
+              <option value="tube">Tube carton + étiquette</option>
+              <option value="vrac">Vrac en carton</option>
+            </select>
+            <div className="mt-1 text-xs text-neutral-500">
+              {packaging === "tube" ? "+1,50 € / poster" : "Aucun surcoût"}
+            </div>
+          </label>
+
+          <label className="text-sm flex items-end">
+            <span className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 w-full">
+              <input
+                type="checkbox"
+                checked={packaging === "tube"}
+                onChange={(e) => setPackaging(e.target.checked ? "tube" : "vrac")}
+              />
+              <span className="text-neutral-800 font-medium">Tube</span>
+            </span>
           </label>
         </div>
 
@@ -1844,8 +1923,10 @@ const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
           </button>
 
           {computed.hasMinError && (
-            <div className="text-xs text-red-700 self-center">Commande bloquée : minimum de 10 posters par format sélectionné.</div>
-          )}
+  <div className="text-xs text-red-700 self-center">
+    Commande bloquée : minimum de 10 posters requis si la commande est en A2 uniquement.
+  </div>
+)}
         </div>
       </div>
     </div>
