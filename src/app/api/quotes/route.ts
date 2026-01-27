@@ -37,11 +37,14 @@ type PostersPayload = {
   // ✅ ordre de sélection par format (pour la règle 1→2 sur la 1ère ligne)
   selectionOrderByFmt?: Record<"30x40" | "A3" | "A2", string[]>;
 
-  selections: Array<{
+    selections: Array<{
     format: "30x40" | "A3" | "A2";
     ref: string; // R-XXXXXX
     name: string; // déjà latin + FR ou "-"
     qty: number;
+
+    // ✅ NEW : grammage à afficher dans la désignation PDF (ex: "250g", "135g")
+    grammage?: string;
   }>;
 };
 
@@ -132,7 +135,10 @@ export async function POST(req: Request) {
         format: String(s.format) as "30x40" | "A3" | "A2",
         ref: String(s.ref ?? "").trim(),
         name: String(s.name ?? "").trim() || "-",
-        qty: clampInt(Math.trunc(Number(s.qty ?? 1)), 1, 9999),
+                qty: clampInt(Math.trunc(Number(s.qty ?? 1)), 1, 9999),
+
+        // ✅ NEW
+        grammage: String((s as any).grammage ?? "").trim(),
       }))
       .filter((s) => (s.format === "30x40" || s.format === "A3" || s.format === "A2") && s.ref);
 
@@ -202,8 +208,12 @@ export async function POST(req: Request) {
         // - toujours "R-XXXXXX — <Nom>" (Nom peut être "-" )
         // - format entre parenthèses
         const fmtLabel = fmt === "30x40" ? "30×40" : fmt;
+                const gram = String((s as any).grammage ?? "").trim();
+        const gramPart = gram ? ` — ${gram}` : "";
+
         enforced.push({
-          label: `${s.ref} — ${s.name || "-"} (${fmtLabel})`,
+          // ✅ IMPORTANT : on garde "(format)" à la fin pour que le PDF continue d'extraire le format correctement
+          label: `${s.ref} — ${s.name || "-"}${gramPart} (${fmtLabel})`,
           qty: q,
           unitCents,
           sort: sort++,
