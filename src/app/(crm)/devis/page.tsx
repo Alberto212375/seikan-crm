@@ -1390,22 +1390,30 @@ next[ref.ref] = minQty;
       validDays: 1,
 
             posters: {
-        firstOrder,
-        vatExempt,
-        deferredPayment,
-        closingDate: closureObj.key,
-        deliveryWindowLabel,
-        discountAppliedPct,
-        paperWeight,
-        packaging,
-        selectionOrderByFmt,
-        selections: computed.outLines.map((l) => ({
-          format: l.format,
-          ref: l.ref,
-          name: l.name,
-          qty: l.qty,
-        })),
-      },
+  firstOrder,
+  vatExempt,
+  deferredPayment,
+  closingDate: closureObj.key,
+  deliveryWindowLabel,
+  discountAppliedPct,
+  paperWeight,
+  packaging,
+
+  // ✅ NEW : pour la ligne séparée dans le PDF
+  tubeCartonEtiquette: packaging === "tube",
+  tubeCartonEtiquetteExtraEuros: packaging === "tube" ? 1.5 : 0,
+
+  selectionOrderByFmt,
+  selections: computed.outLines.map((l) => ({
+    format: l.format,
+    ref: l.ref,
+    name: l.name,
+    qty: l.qty,
+
+    // ✅ NEW : on force le grammage (pour l'affichage PDF)
+    grammage: paperWeight,
+  })),
+},
 
       metaJson: JSON.stringify({
         mode: "POSTERS",
@@ -1422,15 +1430,19 @@ next[ref.ref] = minQty;
           address: deliveryWindowLabel,
         },
                 posters: {
-          firstOrder,
-          vatExempt,
-          deferredPayment,
-          closingDate: closureObj.key,
-          deliveryWindowLabel,
-          discountAppliedPct,
-          paperWeight,
-          packaging,
-        },
+  firstOrder,
+  vatExempt,
+  deferredPayment,
+  closingDate: closureObj.key,
+  deliveryWindowLabel,
+  discountAppliedPct,
+  paperWeight,
+  packaging,
+
+  // ✅ NEW
+  tubeCartonEtiquette: packaging === "tube",
+  tubeCartonEtiquetteExtraEuros: packaging === "tube" ? 1.5 : 0,
+},
       }),
     };
 
@@ -1627,13 +1639,13 @@ const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
           <label className="text-sm">
             <span className="text-neutral-600">Colisage</span>
             <select
-              className="mt-1 w-full rounded-xl border px-3 py-2"
-              value={packaging}
-              onChange={(e) => setPackaging(e.target.value as "tube" | "vrac")}
-            >
-              <option value="tube">Tube carton + étiquette</option>
-              <option value="vrac">Vrac en carton</option>
-            </select>
+  className="mt-1 w-full rounded-xl border px-3 py-2"
+  value={packaging}
+  onChange={(e) => setPackaging(e.target.value as "tube" | "vrac")}
+>
+  <option value="vrac">Vrac en carton</option>
+  <option value="tube">Tube carton + étiquette</option>
+</select>
             <div className="mt-1 text-xs text-neutral-500">
               {packaging === "tube" ? "+1,50 € / poster" : "Aucun surcoût"}
             </div>

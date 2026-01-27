@@ -27,30 +27,57 @@ type PostersPayload = {
   firstOrder: boolean;
   vatExempt: boolean;
 
-  // ✅ Paiement différé (arrhes 50% / solde 50%) — sinon acompte 0
   deferredPayment?: boolean;
 
   closingDate: string; // YYYY-MM-DD
   deliveryWindowLabel: string;
   discountAppliedPct?: number;
 
-  // ✅ ordre de sélection par format (pour la règle 1→2 sur la 1ère ligne)
+  // ✅ NEW : impression / colisage
+  paperWeight?: "250g" | "135g";
+  packaging?: "tube" | "vrac";
+
+  // ✅ NEW : ligne séparée (tube)
+  tubeCartonEtiquette?: boolean;
+  tubeCartonEtiquetteExtraEuros?: number;
+
   selectionOrderByFmt?: Record<"30x40" | "A3" | "A2", string[]>;
 
-    selections: Array<{
+  selections: Array<{
     format: "30x40" | "A3" | "A2";
-    ref: string; // R-XXXXXX
-    name: string; // déjà latin + FR ou "-"
+    ref: string;
+    name: string;
     qty: number;
-
-    // ✅ NEW : grammage à afficher dans la désignation PDF (ex: "250g", "135g")
-    grammage?: string;
+    grammage?: string; // "250g"/"135g"
   }>;
 };
 
-function calcUnitPriceEuros(format: "30x40" | "A3" | "A2", totalUnitsInFormat: number) {
-  const base =
-    totalUnitsInFormat >= 50 ? 12 : totalUnitsInFormat >= 25 ? 14 : totalUnitsInFormat >= 10 ? 16 : 18;
+function calcUnitPriceEuros(
+  format: "30x40" | "A3" | "A2",
+  totalUnitsInFormat: number,
+  paper: "250g" | "135g"
+) {
+  let base: number;
+
+  if (paper === "250g") {
+    base =
+      totalUnitsInFormat >= 50
+        ? 12
+        : totalUnitsInFormat >= 25
+        ? 14
+        : totalUnitsInFormat >= 10
+        ? 16
+        : 18;
+  } else {
+    // ✅ 135g
+    base =
+      totalUnitsInFormat >= 25
+        ? 10
+        : totalUnitsInFormat >= 10
+        ? 12
+        : 14;
+  }
+
   return format === "A2" ? base + 8 : base;
 }
 
@@ -128,6 +155,11 @@ export async function POST(req: Request) {
     const vatExempt = posters.vatExempt !== false; // default true
     const deferredPayment = Boolean(posters.deferredPayment); // ✅ NEW
     const discountPct = Math.max(0, Math.min(100, Number(posters.discountAppliedPct ?? 0) || 0));
+        const paperWeight = (posters.paperWeight === "135g" ? "135g" : "250g") as "250g" | "135g";
+
+    const tubeEnabled = Boolean(posters.tubeCartonEtiquette) || posters.packaging === "tube";
+    const tubeExtraEuros = Number(posters.tubeCartonEtiquetteExtraEuros ?? 0) || 0;
+
 
     // --- normalisation selections ---
     const selections = posters.selections
@@ -180,6 +212,7 @@ export async function POST(req: Request) {
         formatTotals[fmt] += Math.max(1, qtyEffectiveByRef[s.ref] ?? s.qty ?? 1);
       }
     });
+    const totalPostersAllFormats = formatTotals["30x40"] + formatTotals["A3"] + formatTotals["A2"];
 
     // ✅ validation minimum 10 / format sélectionné
     (Object.keys(byFormat) as Array<"30x40" | "A3" | "A2">).forEach((fmt) => {
@@ -198,8 +231,8 @@ export async function POST(req: Request) {
       const list = byFormat[fmt];
       if (list.length === 0) return;
 
-      const unitEuros = calcUnitPriceEuros(fmt, formatTotals[fmt]);
-      const unitCents = eurosToCents(String(unitEuros));
+      const unitEuros = calcUnitPriceEuros(fmt, formatTotals[fmt], paperWeight);
+const unitCents = eurosToCents(String(unitEuros));
 
       for (const s of list) {
         const q = Math.max(1, qtyEffectiveByRef[s.ref] ?? s.qty ?? 1);
@@ -220,6 +253,16 @@ export async function POST(req: Request) {
         });
       }
     });
+
+// ✅ NEW : ligne séparée "tube cartonné + étiquette" (uniquement si sélectionné)
+if (tubeEnabled && totalPostersAllFormats > 0 && tubeExtraEuros > 0) {
+  enforced.push({
+    label: "Finition tube cartonné + Etiquette",
+    qty: totalPostersAllFormats,
+    unitCents: eurosToCents(String(tubeExtraEuros)),
+    sort: sort++,
+  });
+}
 
     // totals HT posters
     const postersHT = enforced.reduce((sum, it) => sum + Math.round(it.qty * it.unitCents), 0);
@@ -303,6 +346,10 @@ export async function POST(req: Request) {
   francoCost,
   closingDate: String(posters.closingDate ?? ""),
   deliveryWindowLabel: String(posters.deliveryWindowLabel ?? ""),
+  paperWeight,
+packaging: posters.packaging ?? "vrac",
+tubeCartonEtiquette: tubeEnabled,
+tubeCartonEtiquetteExtraEuros: tubeExtraEuros,
 
   // ✅ IMPORTANT : nécessaire pour /api/orders (Commandes)
   selections: selections.map((s) => ({
@@ -310,6 +357,7 @@ export async function POST(req: Request) {
     ref: s.ref,
     name: s.name || "-",
     qty: Math.max(1, qtyEffectiveByRef[s.ref] ?? s.qty ?? 1),
+grammage: (s.grammage || paperWeight),
   })),
 },
 

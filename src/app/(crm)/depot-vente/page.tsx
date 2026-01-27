@@ -113,6 +113,17 @@ type ConsignmentMeta = {
     firstName?: string;
   };
 
+  billingAddress?: {
+    street?: string;
+    postalCode?: string;
+    city?: string;
+  };
+
+  // ✅ NEW : audit posters
+  posters?: {
+    paperWeight?: "250g" | "135g";
+  };
+
   signature?: {
     signerFirstName?: string;
     signerLastName?: string;
@@ -125,6 +136,7 @@ type ConsignmentMeta = {
 };
 
 type PosterFormat = "30x40" | "A3" | "A2";
+type PaperWeight = "250g" | "135g";
 
 type PosterRef = {
   format: PosterFormat;
@@ -180,9 +192,28 @@ function eurosToCents(s: string) {
 }
 
 // même barème que devis posters
-function calcUnitPriceEuros(format: PosterFormat, totalUnitsInFormat: number) {
-  const base =
-    totalUnitsInFormat >= 50 ? 12 : totalUnitsInFormat >= 25 ? 14 : totalUnitsInFormat >= 10 ? 16 : 18;
+function calcUnitPriceEuros(format: PosterFormat, totalUnitsInFormat: number, paper: "250g" | "135g") {
+  let base: number;
+
+  if (paper === "250g") {
+    base =
+      totalUnitsInFormat >= 50
+        ? 12
+        : totalUnitsInFormat >= 25
+        ? 14
+        : totalUnitsInFormat >= 10
+        ? 16
+        : 18;
+  } else {
+    // ✅ 135g
+    base =
+      totalUnitsInFormat >= 25
+        ? 10
+        : totalUnitsInFormat >= 10
+        ? 12
+        : 14;
+  }
+
   return format === "A2" ? base + 8 : base;
 }
 
@@ -1211,6 +1242,8 @@ function DepotCreateForm({ onBack }: { onBack: () => void }) {
 
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<ClientUi[]>([]);
+  // ✅ NEW : grammage (comme Devis)
+const [paperWeight, setPaperWeight] = useState<PaperWeight>("250g");
 
   // create form
   const [clientId, setClientId] = useState("");
@@ -1309,14 +1342,14 @@ function DepotCreateForm({ onBack }: { onBack: () => void }) {
       prev.map((it) => {
         const fmt = formatUiToInternal(it.format);
         const totalFmt = totals[fmt] || 0;
-        const unit = calcUnitPriceEuros(fmt, totalFmt <= 0 ? 0 : totalFmt);
+        const unit = calcUnitPriceEuros(fmt, totalFmt <= 0 ? 0 : totalFmt, paperWeight);
         const unitStr = String(unit.toFixed(2)).replace(".", ",");
         if (it.unitPriceEuros === unitStr) return it;
         return { ...it, unitPriceEuros: unitStr };
       })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.map((x) => `${x.format}|${x.qty}`).join("||")]);
+  }, [paperWeight, items.map((x) => `${x.format}|${x.qty}`).join("||")]);
 
   useEffect(() => {
     let alive = true;
@@ -1361,19 +1394,22 @@ function DepotCreateForm({ onBack }: { onBack: () => void }) {
       return alert("Client PRO : renseigne la Société.");
     }
 
-    const payload = {
+        const payload = {
       clientId,
       depositDate,
       periodDays: Number(periodDays || 14),
       recoveryDate,
+      paperWeight,
 
       items: items.map((it) => ({
-        ref: it.ref,
-        format: it.format, // UI format
-        nameFR: it.nameFR,
-        qty: Math.max(1, Number(it.qty || 1)),
-        unitPrice: eurosToCents(it.unitPriceEuros),
-      })),
+  ref: it.ref,
+  format: it.format, // UI format
+  nameFR: it.nameFR,
+  // ✅ NEW : on conserve aussi en champ dédié + on assure la mention au PDF
+  grammage: paperWeight,
+  qty: Math.max(1, Number(it.qty || 1)),
+  unitPrice: eurosToCents(it.unitPriceEuros),
+})),
 
       clientSnapshot: {
         isProfessional: Boolean(client?.isProfessional),
@@ -1530,6 +1566,21 @@ function DepotCreateForm({ onBack }: { onBack: () => void }) {
           <label className="text-sm md:col-span-2">
             <span className="text-neutral-600">Date de récupération</span>
             <input type="date" className="mt-1 w-full rounded-xl border px-3 py-2" value={recoveryDate} onChange={(e) => setRecoveryDate(e.target.value)} disabled={loading} />
+          </label>
+        </div>
+
+                {/* ✅ NEW : Papier (comme Devis) */}
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="text-sm">
+            <span className="text-neutral-600">Papier</span>
+            <select
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={paperWeight}
+              onChange={(e) => setPaperWeight(e.target.value as any)}
+            >
+              <option value="250g">250g (premium)</option>
+              <option value="135g">135g</option>
+            </select>
           </label>
         </div>
 

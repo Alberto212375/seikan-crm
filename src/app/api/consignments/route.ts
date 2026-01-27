@@ -80,14 +80,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Aucun article en dépôt." }, { status: 400 });
     }
 
-    const items = itemsRaw.map((it: any, idx: number) => ({
-      ref: String(it?.ref || "—").trim(),
-      format: String(it?.format || "—").trim(),
-      nameFR: String(it?.nameFR || "").trim() || null,
-      qty: Math.max(1, Number(it?.qty || 1)),
-      unitPrice: Math.max(0, Math.round(Number(it?.unitPrice || 0))),
-      sort: idx,
-    }));
+    const paperWeight = body?.paperWeight === "135g" ? "135g" : "250g";
+
+const items = itemsRaw.map((it: any, idx: number) => {
+  const nameFR = String(it?.nameFR || "").trim() || null;
+  const grammage = String(it?.grammage || "").trim() || paperWeight;
+
+  // ✅ IMPORTANT : on injecte le grammage dans la désignation stockée (garanti pour PDF)
+  const nameFRWithGram = nameFR ? `${nameFR} — ${grammage}` : null;
+
+  return {
+    ref: String(it?.ref || "—").trim(),
+    format: String(it?.format || "—").trim(),
+    nameFR: nameFRWithGram,
+    qty: Math.max(1, Number(it?.qty || 1)),
+    unitPrice: Math.max(0, Math.round(Number(it?.unitPrice || 0))),
+    sort: idx,
+  };
+});
 
     // numérotation DV-YYYY-0001
     const year = new Date().getFullYear();
@@ -113,20 +123,26 @@ export async function POST(req: Request) {
         clientAddress: client.shippingAddress || client.billingAddress || null,
 
                 metaJson: JSON.stringify({
-          party: {
-            isProfessional: Boolean(snap?.isProfessional),
-            societe: normalize(snap?.societe),
-            service: normalize(snap?.service),
-            siret: normalize(snap?.siret),
-            lastName: normalize(snap?.lastName),
-            firstName: normalize(snap?.firstName),
-          },
-          billingAddress: {
-            street: normalize(snapBilling?.street),
-            postalCode: normalize(snapBilling?.postalCode),
-            city: normalize(snapBilling?.city),
-          },
-        }),
+  party: {
+    isProfessional: Boolean(snap?.isProfessional),
+    societe: normalize(snap?.societe),
+    service: normalize(snap?.service),
+    siret: normalize(snap?.siret),
+    lastName: normalize(snap?.lastName),
+    firstName: normalize(snap?.firstName),
+  },
+  billingAddress: {
+    street: normalize(snapBilling?.street),
+    postalCode: normalize(snapBilling?.postalCode),
+    city: normalize(snapBilling?.city),
+  },
+
+  // ✅ NEW : audit posters (papier)
+  posters: {
+    paperWeight,
+  },
+}),
+
         items: { create: items },
 
       },
