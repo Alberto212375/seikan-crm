@@ -84,17 +84,23 @@ export async function POST(req: Request) {
 
 const items = itemsRaw.map((it: any, idx: number) => {
   const nameFR = String(it?.nameFR || "").trim() || null;
-  const grammage = String(it?.grammage || "").trim() || paperWeight;
+
+  // grammage : priorité à la ligne, sinon paperWeight global
+  let grammage = String(it?.grammage || "").trim() || paperWeight;
+  grammage = grammage === "135g" ? "135g" : "250g";
 
   // ✅ IMPORTANT : on injecte le grammage dans la désignation stockée (garanti pour PDF)
   const nameFRWithGram = nameFR ? `${nameFR} — ${grammage}` : null;
+
+  // ✅ PU fixe dépôt-vente (en centimes)
+  const unitPriceCents = grammage === "135g" ? 1500 : 1800;
 
   return {
     ref: String(it?.ref || "—").trim(),
     format: String(it?.format || "—").trim(),
     nameFR: nameFRWithGram,
     qty: Math.max(1, Number(it?.qty || 1)),
-    unitPrice: Math.max(0, Math.round(Number(it?.unitPrice || 0))),
+    unitPrice: unitPriceCents,
     sort: idx,
   };
 });

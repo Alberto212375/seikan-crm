@@ -69,22 +69,24 @@ function calcUnitPriceEuros(
     return base250 + 8;
   }
 
-  // ✅ 30×40
+    // ✅ 30×40
   if (format === "30x40") {
     if (paper === "250g") {
-      return n >= 50 ? 12 : n >= 25 ? 14 : n >= 10 ? 16 : 18;
+      // 250g 30×40 : 1–9:18 / 10–24:16 / 25–49:13 / 50+:12
+      return n >= 50 ? 12 : n >= 25 ? 13 : n >= 10 ? 16 : 18;
     }
-    // 135g 30×40
+    // 135g 30×40 : 1–9:15 / 10–24:13 / 25–49:11 / 50+:10
     return n >= 50 ? 10 : n >= 25 ? 11 : n >= 10 ? 13 : 15;
   }
 
   // ✅ A3
   if (format === "A3") {
     if (paper === "250g") {
+      // 250g A3 : 1–9:17 / 10–24:15 / 25–49:13 / 50+:12
       return n >= 50 ? 12 : n >= 25 ? 13 : n >= 10 ? 15 : 17;
     }
-    // 135g A3
-    return n >= 50 ? 10 : n >= 25 ? 10 : n >= 10 ? 12 : 14;
+    // 135g A3 : 1–9:14 / 10–24:12 / 25–49:11 / 50+:10
+    return n >= 50 ? 10 : n >= 25 ? 11 : n >= 10 ? 12 : 14;
   }
 
   return 0;
@@ -223,14 +225,20 @@ export async function POST(req: Request) {
     });
     const totalPostersAllFormats = formatTotals["30x40"] + formatTotals["A3"] + formatTotals["A2"];
 
-    // ✅ validation minimum 10 / format sélectionné
-    (Object.keys(byFormat) as Array<"30x40" | "A3" | "A2">).forEach((fmt) => {
-      if (byFormat[fmt].length === 0) return;
-      const totalUnits = formatTotals[fmt];
-      if (totalUnits < 10) {
-        throw new Error(`Minimum de 10 posters requis pour le format ${fmt}.`);
+        // ✅ Nouvelle règle (alignée avec le front) :
+    // - pas de minimum par format
+    // - SAUF si la commande est "A2 uniquement" => minimum 10 posters au total en A2
+    const selectedFormats = (Object.keys(formatTotals) as Array<"30x40" | "A3" | "A2">).filter(
+      (fmt) => (formatTotals[fmt] || 0) > 0
+    );
+
+    const isA2Only = selectedFormats.length === 1 && selectedFormats[0] === "A2";
+    if (isA2Only) {
+      const totalA2 = formatTotals.A2 || 0;
+      if (totalA2 < 10) {
+        throw new Error("Minimum de 10 posters requis si la commande est en A2 uniquement.");
       }
-    });
+    }
 
     // create quote items (1 ligne par référence)
     const enforced: Array<{ label: string; qty: number; unitCents: number; sort: number }> = [];

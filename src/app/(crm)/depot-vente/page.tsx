@@ -191,30 +191,9 @@ function eurosToCents(s: string) {
   return Math.round(n * 100);
 }
 
-// même barème que devis posters
-function calcUnitPriceEuros(format: PosterFormat, totalUnitsInFormat: number, paper: "250g" | "135g") {
-  let base: number;
-
-  if (paper === "250g") {
-    base =
-      totalUnitsInFormat >= 50
-        ? 12
-        : totalUnitsInFormat >= 25
-        ? 14
-        : totalUnitsInFormat >= 10
-        ? 16
-        : 18;
-  } else {
-    // ✅ 135g
-    base =
-      totalUnitsInFormat >= 25
-        ? 10
-        : totalUnitsInFormat >= 10
-        ? 12
-        : 14;
-  }
-
-  return format === "A2" ? base + 8 : base;
+// ✅ Dépôt-vente : PU fixe (ne dépend ni du volume ni du format)
+function calcUnitPriceEuros(_format: PosterFormat, _totalUnitsInFormat: number, paper: "250g" | "135g") {
+  return paper === "250g" ? 18 : 15;
 }
 
 function buildClientDisplayName(c: ClientUi | null) {
@@ -1328,28 +1307,19 @@ const [paperWeight, setPaperWeight] = useState<PaperWeight>("250g");
     setBillingCity(String(client.city || "").trim());
   }, [client]);
 
-  // prix auto recalculé en continu (par format, selon total qty de ce format)
-  useEffect(() => {
-    const totals: Record<PosterFormat, number> = { "30x40": 0, A3: 0, A2: 0 };
-
-    for (const it of items) {
+  // ✅ Dépôt-vente : prix auto fixe selon grammage (pas de barème volume)
+useEffect(() => {
+  setItems((prev) =>
+    prev.map((it) => {
       const fmt = formatUiToInternal(it.format);
-      const q = Math.max(0, Number(it.qty || 0));
-      totals[fmt] += q;
-    }
-
-    setItems((prev) =>
-      prev.map((it) => {
-        const fmt = formatUiToInternal(it.format);
-        const totalFmt = totals[fmt] || 0;
-        const unit = calcUnitPriceEuros(fmt, totalFmt <= 0 ? 0 : totalFmt, paperWeight);
-        const unitStr = String(unit.toFixed(2)).replace(".", ",");
-        if (it.unitPriceEuros === unitStr) return it;
-        return { ...it, unitPriceEuros: unitStr };
-      })
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paperWeight, items.map((x) => `${x.format}|${x.qty}`).join("||")]);
+      const unit = calcUnitPriceEuros(fmt, 0, paperWeight); // total inutile en DV
+      const unitStr = String(unit.toFixed(2)).replace(".", ",");
+      if (it.unitPriceEuros === unitStr) return it;
+      return { ...it, unitPriceEuros: unitStr };
+    })
+  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [paperWeight, items.length]);
 
   useEffect(() => {
     let alive = true;
