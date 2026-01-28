@@ -300,30 +300,38 @@ const POSTERS: Record<PosterFormat, PosterRef[]> = {
 type PaperWeight = "250g" | "135g";
 
 function calcUnitPriceEuros(format: PosterFormat, totalUnitsInFormat: number, paper: PaperWeight) {
-  let base: number;
+  const n = totalUnitsInFormat;
 
-  // ✅ 250g = règle actuelle
-  if (paper === "250g") {
-    base =
-      totalUnitsInFormat >= 50
-        ? 12
-        : totalUnitsInFormat >= 25
-        ? 14
-        : totalUnitsInFormat >= 10
-        ? 16
-        : 18;
-  } else {
-    // ✅ 135g = nouvelle règle
-    base =
-      totalUnitsInFormat >= 25
-        ? 10
-        : totalUnitsInFormat >= 10
-        ? 12
-        : 14; // 1–9
+  // ✅ A2 : NE CHANGE PAS (on garde l’ancienne logique A2 = grille 250g + 8€, indépendante du grammage)
+  if (format === "A2") {
+    const base250 =
+      n >= 50 ? 12 :
+      n >= 25 ? 14 :
+      n >= 10 ? 16 :
+      18;
+    return base250 + 8;
   }
 
-  // ✅ A2 garde le +8€ (comme ton système actuel)
-  return format === "A2" ? base + 8 : base;
+  // ✅ 30×40
+  if (format === "30x40") {
+    if (paper === "250g") {
+      return n >= 50 ? 12 : n >= 25 ? 14 : n >= 10 ? 16 : 18;
+    }
+    // 135g 30×40
+    return n >= 50 ? 10 : n >= 25 ? 11 : n >= 10 ? 13 : 15;
+  }
+
+  // ✅ A3
+  if (format === "A3") {
+    if (paper === "250g") {
+      return n >= 50 ? 12 : n >= 25 ? 13 : n >= 10 ? 15 : 17;
+    }
+    // 135g A3
+    return n >= 50 ? 10 : n >= 25 ? 10 : n >= 10 ? 12 : 14;
+  }
+
+  // fallback (au cas où)
+  return 0;
 }
 
 function clampInt(n: number, min: number, max: number) {
