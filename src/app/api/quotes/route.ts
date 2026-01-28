@@ -288,25 +288,27 @@ if (tubeEnabled && totalPostersAllFormats > 0 && tubeExtraEuros > 0) {
     const discountAmount = discountPct > 0 ? Math.round((postersHT * discountPct) / 100) : 0;
     const afterDiscountHT = postersHT - discountAmount;
 
-    // franco : seuil standard 250€ HT (sinon 20€), si première commande seuil = 120€ HT
-    const francoThreshold = firstOrder ? 12000 : 25000;
-    const francoCost = afterDiscountHT >= francoThreshold ? 0 : 2000;
+    // ✅ Commande d’essai / première commande : AUCUN frais de port, et pas de seuil
+const francoThreshold = firstOrder ? 0 : 25000;
+const francoCost = firstOrder ? 0 : (afterDiscountHT >= francoThreshold ? 0 : 2000);
 
-    // ✅ ligne franco toujours présente + libellé “Livraison offerte (…)” si 0€
-    const francoLabel =
-      francoCost === 0
-        ? `Livraison offerte (Franco supérieur à ${firstOrder ? "120" : "250"}€ HT)`
-        : `Frais de livraison (Franco supérieur à ${firstOrder ? "120" : "250"}€ HT)`;
+// ✅ Ligne franco : si commande d’essai => libellé simple sans 120/250
+const francoLabel =
+  firstOrder
+    ? "Livraison offerte (commande d’essai)"
+    : francoCost === 0
+      ? "Livraison offerte (Franco supérieur à 250€ HT)"
+      : "Frais de livraison (Franco supérieur à 250€ HT)";
 
-    enforced.push({
-      label: francoLabel,
-      qty: 1,
-      unitCents: francoCost,
-      sort: sort++,
-    });
+enforced.push({
+  label: francoLabel,
+  qty: 1,
+  unitCents: francoCost,
+  sort: sort++,
+});
 
-    // total HT final
-    const totalHT = afterDiscountHT + francoCost;
+// total HT final
+const totalHT = afterDiscountHT + francoCost;
 
     // ✅ ARRHES DB : dépend uniquement de “Paiement différé”
     // - NON coché => 0%

@@ -1289,9 +1289,10 @@ next[ref.ref] = minQty;
     const discountAmount = discountPct > 0 ? Math.round((postersHTCents * discountPct) / 100) : 0;
     const afterDiscountHT = postersHTCents - discountAmount;
 
-    const francoThreshold = firstOrder ? 12000 : 25000;
-    const francoCost = afterDiscountHT >= francoThreshold ? 0 : 2000;
-    const totalHT = afterDiscountHT + francoCost;
+    // ✅ Commande d’essai / première commande : AUCUN frais de port
+const francoThreshold = firstOrder ? 0 : 25000;
+const francoCost = firstOrder ? 0 : (afterDiscountHT >= francoThreshold ? 0 : 2000);
+const totalHT = afterDiscountHT + francoCost;
 
     const vatRate = vatExempt ? 0 : 0.2;
     const totalTTC = vatRate > 0 ? Math.round(totalHT * (1 + vatRate)) : totalHT;
@@ -1885,10 +1886,21 @@ const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
             <div className="text-neutral-700">Total HT</div>
             <div className="mt-1 text-lg font-semibold tabular-nums">{centsToEurosStr(computed.totalHT)} €</div>
             <div className="mt-1 text-xs text-neutral-500">
-              Franco :{" "}
-              {computed.francoCost === 0 ? <span className="font-medium">offert</span> : <span className="font-medium">20 €</span>} — seuil{" "}
-              <span className="font-medium">{centsToEurosStr(computed.francoThreshold)} €</span> {firstOrder ? "(première commande)" : ""}.
-            </div>
+  Franco :{" "}
+  {firstOrder ? (
+    <span className="font-medium">offert (commande d’essai)</span>
+  ) : computed.francoCost === 0 ? (
+    <>
+      <span className="font-medium">offert</span> — seuil{" "}
+      <span className="font-medium">{centsToEurosStr(computed.francoThreshold)} €</span>.
+    </>
+  ) : (
+    <>
+      <span className="font-medium">20 €</span> — seuil{" "}
+      <span className="font-medium">{centsToEurosStr(computed.francoThreshold)} €</span>.
+    </>
+  )}
+</div>
           </div>
 
           <div className="rounded-xl border p-3">
