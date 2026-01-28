@@ -92,6 +92,22 @@ function calcUnitPriceEuros(
   return 0;
 }
 
+function calcUnitPriceEurosFirstOrderAware(
+  format: "30x40" | "A3" | "A2",
+  totalUnitsInFormat: number,
+  paper: "250g" | "135g",
+  firstOrder: boolean
+) {
+  // ✅ Si "Première commande" = ON :
+  // 135g => 10€ ; 250g => 12€ ; quelle que soit la quantité
+  // ⚠️ On ne touche pas A2 (reste sur sa logique spéciale)
+  if (firstOrder && format !== "A2") {
+    return paper === "135g" ? 10 : 12;
+  }
+
+  return calcUnitPriceEuros(format, totalUnitsInFormat, paper);
+}
+
 function clampInt(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -248,7 +264,7 @@ export async function POST(req: Request) {
       const list = byFormat[fmt];
       if (list.length === 0) return;
 
-      const unitEuros = calcUnitPriceEuros(fmt, formatTotals[fmt], paperWeight);
+      const unitEuros = calcUnitPriceEurosFirstOrderAware(fmt, formatTotals[fmt], paperWeight, firstOrder);
 const unitCents = eurosToCents(String(unitEuros));
 
       for (const s of list) {

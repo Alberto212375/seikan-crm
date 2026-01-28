@@ -336,6 +336,22 @@ function calcUnitPriceEuros(format: PosterFormat, totalUnitsInFormat: number, pa
   return 0;
 }
 
+function calcUnitPriceEurosFirstOrderAware(
+  format: PosterFormat,
+  totalUnitsInFormat: number,
+  paper: PaperWeight,
+  firstOrder: boolean
+) {
+  // ✅ Si "Première commande" = ON :
+  // 135g => 10€ ; 250g => 12€ ; quelle que soit la quantité
+  // ⚠️ On ne touche pas A2 (reste sur sa logique spéciale)
+  if (firstOrder && format !== "A2") {
+    return paper === "135g" ? 10 : 12;
+  }
+
+  return calcUnitPriceEuros(format, totalUnitsInFormat, paper);
+}
+
 function clampInt(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -1268,7 +1284,8 @@ next[ref.ref] = minQty;
       if (totalUnitsInFormat <= 0) return;
 
             const packagingExtra = packaging === "tube" ? 1.5 : 0;
-      const unit = calcUnitPriceEuros(fmt, totalUnitsInFormat, paperWeight) + packagingExtra;
+const unit =
+  calcUnitPriceEurosFirstOrderAware(fmt, totalUnitsInFormat, paperWeight, firstOrder) + packagingExtra;
 
       for (const s of selectionsByFormat[fmt]) {
         const q = Math.max(1, qtyEffective[s.ref.ref] ?? s.qty ?? 1);
