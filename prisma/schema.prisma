@@ -49,6 +49,7 @@ enum DocumentType {
   QUOTE_PDF
   INVOICE_PDF
   CONSIGNMENT_PDF
+  ORDER_PDF
   CREDIT_NOTE_PDF
   OTHER
 }
@@ -123,7 +124,6 @@ model Client {
   consignments Consignment[]
   documents    Document[]
   activities   Activity[]
-
 }
 
 model Quote {
@@ -269,11 +269,14 @@ model Document {
   invoiceId String?
   invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
-    clientId String?
+  clientId String?
   client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
   consignmentId String?
   consignment   Consignment? @relation(fields: [consignmentId], references: [id], onDelete: SetNull)
+
+  orderId String?
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
 }
 
 model Activity {
@@ -303,7 +306,7 @@ model Consignment {
   seq    Int    @unique
   number String @unique
 
-    status   ConsignmentStatus @default(DRAFT)
+  status   ConsignmentStatus @default(DRAFT)
   signedAt DateTime?
   metaJson String?
 
@@ -312,13 +315,13 @@ model Consignment {
   client   Client @relation(fields: [clientId], references: [id])
 
   // dates (jour J auto côté front, mais stockées ici)
-  depositDate   DateTime @default(now())
-  recoveryDate  DateTime
-  periodDays    Int
+  depositDate  DateTime @default(now())
+  recoveryDate DateTime
+  periodDays   Int
 
   // email envoyé (badge “envoyé le …”)
   emailSentAt    DateTime?
-  emailSentCount Int @default(0)
+  emailSentCount Int       @default(0)
 
   // snapshot client (pour pdf stable)
   clientName    String
@@ -334,7 +337,7 @@ model Consignment {
 }
 
 model ConsignmentItem {
-  id            String @id @default(cuid())
+  id            String      @id @default(cuid())
   consignmentId String
   consignment   Consignment @relation(fields: [consignmentId], references: [id], onDelete: Cascade)
 
@@ -342,7 +345,7 @@ model ConsignmentItem {
   ref    String
   format String
   nameFR String?
-  qty    Int @default(1)
+  qty    Int     @default(1)
 
   // prix de “valeur” (comme devis selon volume) mais éditable à la main
   unitPrice Int
@@ -350,3 +353,69 @@ model ConsignmentItem {
   sort Int @default(0)
 }
 
+enum OrderKind {
+  TEST
+  CLASSIC
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  CANCELED
+}
+
+model Order {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // numérotation CMD-YYYY-0001
+  seq    Int    @unique
+  number String @unique
+
+  kind   OrderKind
+  status OrderStatus @default(PENDING_PAYMENT)
+
+  // infos client (snapshot)
+  firstName String
+  lastName  String
+  email     String
+
+  companyName String?
+  siret       String?
+
+  street     String
+  postalCode String
+  city       String
+
+  packagingLabel String @default("Emballage en pochette plastique + carton rigide")
+
+  // livraison fixe
+  deliveryWindowLabel String @default("Livraison entre le 12 et le 15 mars")
+
+  // paiement avant date fixe
+  payBeforeDate DateTime
+
+  // signature + meta
+  signedAt DateTime?
+  metaJson String?
+
+  totalCents Int @default(0)
+
+  items     OrderItem[]
+  documents Document[]
+}
+
+model OrderItem {
+  id      String @id @default(cuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  ref   String
+  label String
+  qty   Int    @default(0)
+
+  unitPriceCents Int @default(1200)
+
+  sort Int @default(0)
+}
