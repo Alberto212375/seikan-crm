@@ -11,10 +11,13 @@ type Poster = {
 };
 
 const CODE = "skgl";
-const DELIVERY_LABEL = "Livraison entre le 12 et le 15 mars";
+const DELIVERY_TEST_LABEL = "Livraison entre le 12 et le 15 mars";
 const PACKAGING_LABEL = "Emballage en pochette plastique + carton rigide";
 
-// ✅ règle commande classique
+// ✅ prix
+const TEST_UNIT_EUR = 11;
+
+// ✅ règle commande classique (livraison)
 const FRANCO_CLASSIC_EUR = 180; // HT
 const SHIPPING_CLASSIC_EUR = 20; // si franco non atteint
 
@@ -22,8 +25,9 @@ const SHIPPING_CLASSIC_EUR = 20; // si franco non atteint
 const MIN_TEST = 2;
 const MAX_TEST = 10;
 
-const MIN_CLASSIC = 4;
-const MAX_CLASSIC = 10; // ⚠️ tu n’as pas demandé de changer le max global, donc on garde 10 comme avant.
+// ✅ commande classique
+const MIN_CLASSIC_TOTAL = 10;      // min 10 posters au total
+const MIN_CLASSIC_PER_VISUAL = 2;  // min 2 par visuel sélectionné
 
 const POSTERS: Poster[] = [
   { ref: "R-300001", label: "Visuel 1", imageSrc: "/posters/visuel-1.png" },
@@ -45,6 +49,36 @@ function euros(n: number) {
 
 function dataUrlLooksOk(s: string) {
   return typeof s === "string" && s.startsWith("data:image/");
+}
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+function fmtFR(d: Date) {
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+function monthKey(d: Date) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; // YYYY-MM
+}
+
+// 1er jour ouvré du mois (si samedi/dimanche => lundi suivant)
+function firstBusinessDayOfMonth(year: number, monthIndex0: number) {
+  const d = new Date(year, monthIndex0, 1);
+  const day = d.getDay(); // 0 dim, 6 sam
+  if (day === 6) d.setDate(d.getDate() + 2); // samedi -> lundi
+  if (day === 0) d.setDate(d.getDate() + 1); // dimanche -> lundi
+  return d;
+}
+
+// livraison = entre J+12 et J+15 après clôture
+function deliveryWindowFromClosure(closureISO: string) {
+  const base = new Date(`${closureISO}T00:00:00.000Z`);
+  if (Number.isNaN(base.getTime())) return "";
+  const d12 = new Date(base);
+  d12.setUTCDate(d12.getUTCDate() + 12);
+  const d15 = new Date(base);
+  d15.setUTCDate(d15.getUTCDate() + 15);
+  return `Livraison entre le ${fmtFR(d12)} et le ${fmtFR(d15)}`;
 }
 
 // ===============================
@@ -93,10 +127,11 @@ async function fetchAdresseSuggestions(q: string): Promise<AdresseSuggestion[]> 
 // ✅ prix unitaire HT en commande classique selon quantité
 function classicUnitEur(totalQty: number) {
   const n = totalQty;
-  if (n >= 50) return 10;
+  if (n >= 40) return 10;
   if (n >= 20) return 11;
-  if (n >= 10) return 13;
-  return 14; // 1 à 9
+  if (n >= 10) return 12;
+  // < 10 : la commande classique n'est pas autorisée
+  return 0;
 }
 
 export default function SkglPage() {
@@ -140,12 +175,50 @@ export default function SkglPage() {
 
   const [kind, setKind] = useState<"TEST" | "CLASSIC">("TEST");
 
+  // ✅ Clôture (commande classique) : liste des 12 prochains mois
+const closureOptions = useMemo(() => {
+  const now = new Date();
+  const list: { key: string; label: string; closureISO: string }[] = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    const closure = firstBusinessDayOfMonth(d.getFullYear(), d.getMonth());
+    const key = monthKey(d);
+    const closureISO = `${closure.getFullYear()}-${pad2(closure.getMonth() + 1)}-${pad2(closure.getDate())}`;
+    const label = `${key} — clôture le ${fmtFR(closure)}`;
+    list.push({ key, label, closureISO });
+  }
+  return list;
+}, []);
+
+const [classicClosureKey, setClassicClosureKey] = useState<string>(() => {
+  // par défaut : mois courant
+  const now = new Date();
+  return monthKey(now);
+});
+
+const classicClosureISO = useMemo(() => {
+  const found = closureOptions.find((x) => x.key === classicClosureKey) ?? closureOptions[0];
+  return found?.closureISO || "";
+}, [classicClosureKey, closureOptions]);
+
+const deliveryWindowLabel = useMemo(() => {
+  if (kind === "TEST") return DELIVERY_TEST_LABEL;
+  return deliveryWindowFromClosure(classicClosureISO);
+}, [kind, classicClosureISO]);
+
   // qty per poster
   const [qty, setQty] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
     for (const p of POSTERS) init[p.ref] = 0;
     return init;
   });
+
+  // ✅ pour afficher l'erreur en rouge seulement après "sortie" du champ
+const [touched, setTouched] = useState<Record<string, boolean>>(() => {
+  const init: Record<string, boolean> = {};
+  for (const p of POSTERS) init[p.ref] = false;
+  return init;
+});
 
   // bon pour accord + signature
   const [accepted, setAccepted] = useState(false);
@@ -157,15 +230,27 @@ export default function SkglPage() {
   const [signatureDataUrl, setSignatureDataUrl] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const totalQty = useMemo(() => {
-    return Object.values(qty).reduce((s, n) => s + (Number(n) || 0), 0);
-  }, [qty]);
+  // ✅ total posters (toutes quantités additionnées)
+const totalQty = useMemo(() => {
+  return Object.values(qty).reduce((s, n) => s + (Number(n) || 0), 0);
+}, [qty]);
 
-  // ✅ prix unitaire selon type de commande
-  const unitEur = useMemo(() => {
-    if (kind === "TEST") return 12;
-    return classicUnitEur(totalQty);
-  }, [kind, totalQty]);
+// ✅ prix unitaire selon type de commande
+const unitEur = useMemo(() => {
+  if (kind === "TEST") return TEST_UNIT_EUR;
+  return classicUnitEur(totalQty);
+}, [kind, totalQty]);
+
+  // ✅ en CLASSIC : repère les visuels sélectionnés mais < 2
+const perVisualErrors = useMemo(() => {
+  if (kind !== "CLASSIC") return [];
+  const bad: string[] = [];
+  for (const p of POSTERS) {
+    const v = Number(qty[p.ref] || 0);
+    if (v > 0 && v < MIN_CLASSIC_PER_VISUAL) bad.push(p.ref);
+  }
+  return bad;
+}, [kind, qty]);
 
   const postersSubtotalEur = useMemo(() => totalQty * unitEur, [totalQty, unitEur]);
 
@@ -179,12 +264,24 @@ export default function SkglPage() {
   const totalEur = useMemo(() => postersSubtotalEur + shippingEur, [postersSubtotalEur, shippingEur]);
 
   const qtyError = useMemo(() => {
-    const min = kind === "TEST" ? MIN_TEST : MIN_CLASSIC;
-    const max = kind === "TEST" ? MAX_TEST : MAX_CLASSIC;
-    if (totalQty < min) return `Minimum ${min} posters au total.`;
-    if (totalQty > max) return `Maximum ${max} posters au total.`;
+  if (kind === "TEST") {
+    if (totalQty < MIN_TEST) return `Minimum ${MIN_TEST} posters au total.`;
+    if (totalQty > MAX_TEST) return `Maximum ${MAX_TEST} posters au total.`;
     return "";
-  }, [kind, totalQty]);
+  }
+
+  // ✅ CLASSIC (illimité)
+  if (totalQty < MIN_CLASSIC_TOTAL) {
+    return `Minimum ${MIN_CLASSIC_TOTAL} posters au total (commande classique).`;
+  }
+  if (perVisualErrors.length > 0) {
+    return `Merci de sélectionner au moins ${MIN_CLASSIC_PER_VISUAL} posters par visuel.`;
+  }
+  if (!classicClosureISO) {
+    return `Merci de choisir une clôture de commande.`;
+  }
+  return "";
+}, [kind, totalQty, perVisualErrors, classicClosureISO]);
 
   const canSubmit = useMemo(() => {
     if (!okCode) return false;
@@ -332,9 +429,11 @@ export default function SkglPage() {
       postalCode: postalCode.trim(),
       city: city.trim(),
 
-      deliveryWindowLabel: DELIVERY_LABEL,
-      packagingLabel: PACKAGING_LABEL,
+      closureMonthKey: kind === "CLASSIC" ? classicClosureKey : null,
+closureDateISO: kind === "CLASSIC" ? classicClosureISO : null,
 
+deliveryWindowLabel,
+packagingLabel: PACKAGING_LABEL,
       // ✅ total HT incluant livraison si classique
       totalCents: Math.round(totalEur * 100),
 
@@ -438,7 +537,7 @@ export default function SkglPage() {
 
           {kind === "TEST" ? (
             <p className="mt-1 text-sm text-black/70">
-              Commande test — Prix fixe : <span className="font-semibold">12 € HT / poster</span> — {DELIVERY_LABEL}
+              Commande test — Prix fixe : <span className="font-semibold">{TEST_UNIT_EUR} € HT / poster</span> — {deliveryWindowLabel}
             </p>
           ) : (
             <div className="mt-1 space-y-2 text-sm text-black/70">
@@ -448,15 +547,13 @@ export default function SkglPage() {
               <div className="rounded-xl border border-black/10 bg-black/5 px-4 py-3 text-xs">
                 <div className="font-semibold text-black">Grille tarifaire (HT / unité)</div>
                 <div className="mt-1 grid grid-cols-2 gap-x-8 gap-y-1">
-                  <div>1 à 9</div>
-                  <div className="text-right font-medium">14 €</div>
-                  <div>10 à 19</div>
-                  <div className="text-right font-medium">13 €</div>
-                  <div>20 à 49</div>
-                  <div className="text-right font-medium">11 €</div>
-                  <div>50 et +</div>
-                  <div className="text-right font-medium">10 €</div>
-                </div>
+  <div>10 à 19</div>
+  <div className="text-right font-medium">12 €</div>
+  <div>20 à 39</div>
+  <div className="text-right font-medium">11 €</div>
+  <div>40 et +</div>
+  <div className="text-right font-medium">10 €</div>
+</div>
               </div>
             </div>
           )}
@@ -524,7 +621,9 @@ export default function SkglPage() {
                 <option value="CLASSIC">Commande classique</option>
               </select>
               <div className="mt-2 text-xs text-black/60">
-                {kind === "TEST" ? `Min ${MIN_TEST} / Max ${MAX_TEST}` : `Min ${MIN_CLASSIC} / Max ${MAX_CLASSIC}`}
+                {kind === "TEST"
+  ? `Min ${MIN_TEST} / Max ${MAX_TEST}`
+  : `Min ${MIN_CLASSIC_TOTAL} posters au total — min ${MIN_CLASSIC_PER_VISUAL} par visuel — pas de maximum`}
               </div>
             </div>
 
@@ -535,7 +634,7 @@ export default function SkglPage() {
 
             <div className="mt-4 rounded-xl border border-black/10 bg-black/5 px-4 py-3 text-sm">
               <div className="font-medium">Livraison</div>
-              <div className="text-black/70">{DELIVERY_LABEL} (non modifiable)</div>
+              <div className="text-black/70">{deliveryWindowLabel} (non modifiable)</div>
             </div>
           </div>
 
@@ -638,8 +737,8 @@ export default function SkglPage() {
           <h2 className="text-lg font-semibold">Visuels</h2>
           <p className="mt-1 text-sm text-black/70">
             {kind === "TEST"
-              ? `Sélectionnez entre ${MIN_TEST} et ${MAX_TEST} posters au total. Format unique : 30×40.`
-              : `Sélectionnez entre ${MIN_CLASSIC} et ${MAX_CLASSIC} posters au total. Format unique : 30×40.`}
+  ? `Sélectionnez entre ${MIN_TEST} et ${MAX_TEST} posters au total. Format unique : 30×40.`
+  : `Sélectionnez au moins ${MIN_CLASSIC_TOTAL} posters au total, avec minimum ${MIN_CLASSIC_PER_VISUAL} par visuel sélectionné. Pas de maximum. Format unique : 30×40.`}
           </p>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -662,18 +761,47 @@ export default function SkglPage() {
                   <div className="mt-3 flex items-center justify-between">
                     <div className="text-sm text-black/70">Quantité</div>
                     <input
-                      type="number"
-                      min={0}
-                      max={MAX_CLASSIC} // même max que total (on garde simple)
-                      value={v}
-                      onChange={(e) =>
-                        setQty((prev) => ({
-                          ...prev,
-                          [p.ref]: clampInt(e.target.value, 0, MAX_CLASSIC),
-                        }))
-                      }
-                      className="w-24 rounded-xl border border-black/15 px-3 py-2 text-right text-sm"
-                    />
+  type="number"
+  min={0}
+  value={v}
+  onChange={(e) => {
+    const raw = Math.trunc(Number(e.target.value));
+    const n = Number.isFinite(raw) ? raw : 0;
+
+    setQty((prev) => {
+      const prevVal = Number(prev[p.ref] || 0);
+
+      // ✅ TEST : clamp 0..MAX_TEST
+      if (kind === "TEST") {
+        return { ...prev, [p.ref]: clampInt(n, 0, MAX_TEST) };
+      }
+
+      // ✅ CLASSIC : illimité
+      // si on "active" un visuel (0 -> >0), on met 2 automatiquement
+      if (prevVal === 0 && n > 0) {
+        return { ...prev, [p.ref]: Math.max(MIN_CLASSIC_PER_VISUAL, n) };
+      }
+
+      // sinon : l'utilisateur tape ce qu'il veut (>=0)
+      return { ...prev, [p.ref]: Math.max(0, n) };
+    });
+  }}
+  onBlur={() => {
+    if (kind === "CLASSIC") {
+      setTouched((prev) => ({ ...prev, [p.ref]: true }));
+    }
+  }}
+  className={`w-24 rounded-xl border px-3 py-2 text-right text-sm ${
+    kind === "CLASSIC" && touched[p.ref] && v > 0 && v < MIN_CLASSIC_PER_VISUAL
+      ? "border-red-500 text-red-700"
+      : "border-black/15"
+  }`}
+/>
+{kind === "CLASSIC" && touched[p.ref] && v > 0 && v < MIN_CLASSIC_PER_VISUAL ? (
+  <div className="mt-1 text-xs text-red-700">
+    Merci de sélectionner plus de {MIN_CLASSIC_PER_VISUAL} posters par visuel.
+  </div>
+) : null}
                   </div>
                 </div>
               );

@@ -6,6 +6,17 @@ import { getTransporter } from "@/lib/mailer";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// ✅ paramètres business (source de vérité côté serveur)
+const FRANCO_CLASSIC_EUR = 180; // HT
+const SHIPPING_CLASSIC_EUR = 20; // HT
+const TEST_UNIT_EUR = 11;
+
+const MIN_TEST_TOTAL = 2;
+const MAX_TEST_TOTAL = 10;
+
+const MIN_CLASSIC_TOTAL = 10;
+const MIN_CLASSIC_PER_VISUAL = 2;
+
 function normalize(s: unknown) {
   return String(s ?? "").trim();
 }
@@ -16,6 +27,30 @@ function toInt(n: unknown, def = 0) {
 }
 function pad6(n: number) {
   return String(n).padStart(6, "0");
+}
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+function fmtFRShort(d: Date) {
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+function addDaysUTC(isoDate: string, days: number) {
+  const d = new Date(`${isoDate}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() + days);
+  return d;
+}
+function deliveryWindowFromClosureISO(closureISO: string) {
+  const d12 = addDaysUTC(closureISO, 12);
+  const d15 = addDaysUTC(closureISO, 15);
+  if (!d12 || !d15) return "";
+  return `Livraison entre le ${fmtFRShort(d12)} et le ${fmtFRShort(d15)}`;
+}
+function classicUnitEur(totalQty: number) {
+  if (totalQty >= 40) return 10;
+  if (totalQty >= 20) return 11;
+  if (totalQty >= 10) return 12;
+  return 0; // <10 : pas autorisé
 }
 
 type PublicOrderItem = {
@@ -41,10 +76,13 @@ type PublicOrderPayload = {
   postalCode: string;
   city: string;
 
+  // envoyé par le front, mais le serveur peut recalculer
   deliveryWindowLabel?: string;
   packagingLabel?: string;
 
-  totalCents?: number;
+  closureMonthKey?: string | null;
+  closureDateISO?: string | null;
+
   items: PublicOrderItem[];
 
   signature: {
@@ -62,8 +100,10 @@ function makeEmailHtml(args: {
   customerName: string;
   deliveryWindow: string;
   totalCents: number;
+  payBeforeDateIso: string;
 }) {
   const euros = (args.totalCents / 100).toFixed(2).replace(".", ",");
+  const payBefore = fmtFRShort(new Date(args.payBeforeDateIso));
 
   return `
   <div style="font-family: Arial, sans-serif; color:#111; line-height:1.55">
@@ -72,8 +112,7 @@ function makeEmailHtml(args: {
     <p style="margin:0 0 10px 0">Bonjour ${args.customerName},</p>
 
     <p style="margin:0 0 12px 0">
-      Nous vous remercions pour votre première commande.<br/>
-      Votre commande est confirmée et signée (“Bon pour accord”).
+      Votre commande est confirmée et signée (“Bon pour accord”).<br/>
       Vous trouverez la commande signée en pièce jointe (PDF).
     </p>
 
@@ -83,12 +122,12 @@ function makeEmailHtml(args: {
     </p>
 
     <p style="margin:0 0 12px 0">
-      La commande est à régler en intégralité avant le 01/03/2026 via un virement sur les coordonnées banquaires transmises dans la feuille de commande. 
-      Merci de mettre votre numéro de commande comme intitulé du virement. 
+      La commande est à régler en intégralité avant le <strong>${payBefore}</strong> via virement.
+      Merci d’indiquer votre numéro de commande en intitulé du virement.
     </p>
 
     <p style="margin:0">
-      Seikan Gallery 
+      Seikan Gallery<br/>
       Xavier CUZIN<br/>
       seikan.gallery@gmail.com<br/>
       06.10.38.02.08
@@ -101,9 +140,11 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as PublicOrderPayload;
 
+    // --- champs client ---
     const firstName = normalize(body.firstName);
     const lastName = normalize(body.lastName);
     const email = normalize(body.email);
+
     const companyName = body.companyName ? normalize(body.companyName) : null;
     const siret = body.siret ? normalize(body.siret) : null;
 
@@ -111,24 +152,48 @@ export async function POST(req: Request) {
     const postalCode = normalize(body.postalCode);
     const city = normalize(body.city);
 
+    // --- contrôle basique ---
+    if (!firstName || !lastName) return NextResponse.json({ error: "Prénom et nom obligatoires." }, { status: 400 });
+    if (!email) return NextResponse.json({ error: "Email obligatoire." }, { status: 400 });
+    if (!street || !postalCode || !city) return NextResponse.json({ error: "Adresse complète obligatoire." }, { status: 400 });
+
+    // --- commande ---
     const code = normalize(body.code || "skgl").toLowerCase();
-    const kind = body.kind === "CLASSIC" ? "CLASSIC" : "TEST";
+    const kind: "TEST" | "CLASSIC" = body.kind === "CLASSIC" ? "CLASSIC" : "TEST";
 
-    const deliveryWindowLabel = normalize(body.deliveryWindowLabel || "Livraison entre le 12 et le 15 mars");
-    const packagingLabel = normalize(body.packagingLabel || "Emballage en pochette plastique + carton rigide");
+    const closureMonthKey = body.closureMonthKey ? normalize(body.closureMonthKey) : null;
+    const closureDateISO = body.closureDateISO ? normalize(body.closureDateISO) : null;
 
+    // --- signature ---
     const sig = body.signature ?? ({} as any);
     const accepted = Boolean(sig.accepted);
     const signatureDataUrl = normalize(sig.signatureDataUrl || "");
     const signedAt = normalize(sig.signedAt || new Date().toISOString());
 
-    if (!firstName || !lastName) return NextResponse.json({ error: "Prénom et nom obligatoires." }, { status: 400 });
-    if (!email) return NextResponse.json({ error: "Email obligatoire." }, { status: 400 });
-    if (!street || !postalCode || !city) return NextResponse.json({ error: "Adresse complète obligatoire." }, { status: 400 });
     if (!accepted || !signatureDataUrl.startsWith("data:image/")) {
       return NextResponse.json({ error: "Bon pour accord + signature obligatoires." }, { status: 400 });
     }
 
+    // --- emballage (on garde ce que le front envoie, avec fallback) ---
+    const packagingLabel = normalize(body.packagingLabel || "Emballage en pochette plastique + carton rigide");
+
+    // --- livraison + payBeforeDate (recalcul serveur) ---
+    let deliveryWindowLabel = normalize(body.deliveryWindowLabel || "Livraison entre le 12 et le 15 mars");
+    let payBeforeDate = new Date(`${new Date().getFullYear()}-03-01T00:00:00.000Z`);
+
+    if (kind === "CLASSIC") {
+      if (!closureDateISO) {
+        return NextResponse.json({ error: "Clôture obligatoire pour une commande classique." }, { status: 400 });
+      }
+      const computedDelivery = deliveryWindowFromClosureISO(closureDateISO);
+      if (!computedDelivery) {
+        return NextResponse.json({ error: "Clôture invalide." }, { status: 400 });
+      }
+      deliveryWindowLabel = computedDelivery;
+      payBeforeDate = new Date(`${closureDateISO}T00:00:00.000Z`);
+    }
+
+    // --- items (nettoyage) ---
     const items = Array.isArray(body.items) ? body.items : [];
     const normalizedItems = items
       .map((it) => ({
@@ -144,25 +209,95 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Aucun article dans la commande." }, { status: 400 });
     }
 
-    const computedTotal = normalizedItems.reduce((s, it) => s + it.qty * it.unitPriceCents, 0);
-    const totalCents = Math.max(0, toInt(body.totalCents, computedTotal)) || computedTotal;
+    // --- on ignore toute ligne LIVRAISON envoyée par le front : le serveur la refait ---
+    const posterItems = normalizedItems.filter((x) => String(x.ref).toUpperCase() !== "LIVRAISON");
+    const postersQty = posterItems.reduce((s, it) => s + (it.qty || 0), 0);
 
-    // Numérotation + payBeforeDate
+    // --- règles quantités ---
+    if (kind === "TEST") {
+      if (postersQty < MIN_TEST_TOTAL) {
+        return NextResponse.json({ error: `Minimum ${MIN_TEST_TOTAL} posters en commande test.` }, { status: 400 });
+      }
+      if (postersQty > MAX_TEST_TOTAL) {
+        return NextResponse.json({ error: `Maximum ${MAX_TEST_TOTAL} posters en commande test.` }, { status: 400 });
+      }
+    } else {
+      if (postersQty < MIN_CLASSIC_TOTAL) {
+        return NextResponse.json({ error: `Minimum ${MIN_CLASSIC_TOTAL} posters en commande classique.` }, { status: 400 });
+      }
+      const bad = posterItems.filter((it) => it.qty > 0 && it.qty < MIN_CLASSIC_PER_VISUAL);
+      if (bad.length) {
+        return NextResponse.json(
+          { error: `Merci de sélectionner au moins ${MIN_CLASSIC_PER_VISUAL} posters par visuel.` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // --- prix unitaire recalculé serveur ---
+    const unitEur = kind === "TEST" ? TEST_UNIT_EUR : classicUnitEur(postersQty);
+    if (kind === "CLASSIC" && unitEur === 0) {
+      return NextResponse.json({ error: "Commande classique : le barème commence à 10 posters." }, { status: 400 });
+    }
+    const unitCents = Math.round(unitEur * 100);
+
+    // --- sous-total posters ---
+    const postersSubtotalCents = postersQty * unitCents;
+
+    // --- shipping recalculé ---
+    let shippingCents = 0;
+    if (kind === "CLASSIC") {
+      shippingCents = postersSubtotalCents >= FRANCO_CLASSIC_EUR * 100 ? 0 : SHIPPING_CLASSIC_EUR * 100;
+    }
+
+    // --- items reconstruits (posters au bon PU + livraison serveur) ---
+    const rebuiltItems: PublicOrderItem[] = [
+      ...posterItems.map((it) => ({
+        ref: it.ref,
+        label: it.label,
+        qty: it.qty,
+        unitPriceCents: unitCents,
+        sort: it.sort ?? 0,
+      })),
+    ];
+
+    if (kind === "CLASSIC") {
+      rebuiltItems.push({
+        ref: "LIVRAISON",
+        label:
+          shippingCents === 0
+            ? `Livraison offerte (Franco supérieur à ${FRANCO_CLASSIC_EUR}€ HT)`
+            : `Frais de livraison (Franco supérieur à ${FRANCO_CLASSIC_EUR}€ HT)`,
+        qty: 1,
+        unitPriceCents: shippingCents,
+        sort: 9998,
+      });
+    }
+
+    const totalCents = rebuiltItems.reduce((s, it) => s + it.qty * it.unitPriceCents, 0);
+
+    // --- Numérotation ---
     const agg = await prisma.order.aggregate({ _max: { seq: true } });
     const nextSeq = (agg._max.seq ?? 0) + 1;
     const year = new Date().getFullYear();
     const number = `CMD-${year}-${pad6(nextSeq)}`;
 
-    // Paiement avant le 1er mars (comme ton PDF)
-    const payBeforeDate = new Date(`${year}-03-01T00:00:00.000Z`);
-
-    // metaJson.signature (exactement comme ton PDF le lit)
+    // --- metaJson (pour PDF) ---
     const metaJson = JSON.stringify({
       code,
       kind,
+      closureMonthKey,
+      closureDateISO,
       deliveryWindowLabel,
       packagingLabel,
-      pricing: { totalCents, computedTotalCents: computedTotal },
+      pricing: {
+        postersQty,
+        unitEur,
+        postersSubtotalCents,
+        shippingCents,
+        totalCents,
+        francoClassicEur: FRANCO_CLASSIC_EUR,
+      },
       signature: {
         accepted: true,
         signerFirstName: normalize(sig.signerFirstName || firstName),
@@ -173,6 +308,7 @@ export async function POST(req: Request) {
       },
     });
 
+    // --- DB create ---
     const order = await prisma.order.create({
       data: {
         seq: nextSeq,
@@ -193,19 +329,19 @@ export async function POST(req: Request) {
         metaJson,
         totalCents,
         items: {
-          create: normalizedItems.map((it) => ({
+          create: rebuiltItems.map((it) => ({
             ref: it.ref,
             label: it.label,
             qty: it.qty,
             unitPriceCents: it.unitPriceCents,
-            sort: it.sort,
+            sort: it.sort ?? 0,
           })),
         },
       },
       include: { items: true },
     });
 
-    // --- Génération PDF via ta route existante /api/exports/orders/[id]/pdf ---
+    // --- PDF ---
     const origin = new URL(req.url).origin;
     const pdfUrl = `${origin}/api/exports/orders/${order.id}/pdf`;
     const pdfResp = await fetch(pdfUrl, { method: "GET" });
@@ -213,16 +349,13 @@ export async function POST(req: Request) {
     if (!pdfResp.ok) {
       const txt = await pdfResp.text().catch(() => "");
       console.error("ORDER PDF EXPORT FAILED", { status: pdfResp.status, txt });
-      return NextResponse.json(
-        { error: `Commande créée mais PDF impossible (${pdfResp.status}).` },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: `Commande créée mais PDF impossible (${pdfResp.status}).` }, { status: 500 });
     }
 
     const pdfArrayBuffer = await pdfResp.arrayBuffer();
     const pdfBuffer = Buffer.from(pdfArrayBuffer);
 
-    // --- Envoi mail ---
+    // --- mail ---
     const smtpFrom = process.env.SMTP_FROM || process.env.SMTP_USER || "seikan.gallery@gmail.com";
     const proCopyTo = process.env.ORDERS_BCC || smtpFrom;
 
@@ -234,6 +367,7 @@ export async function POST(req: Request) {
       customerName: `${firstName} ${lastName}`.trim(),
       deliveryWindow: deliveryWindowLabel,
       totalCents,
+      payBeforeDateIso: payBeforeDate.toISOString(),
     });
 
     await transporter.sendMail({

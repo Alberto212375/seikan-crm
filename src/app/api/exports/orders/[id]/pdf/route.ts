@@ -316,14 +316,22 @@ const label = isShipping ? `${it.label}` : `${it.ref} — ${it.label} (30×40)`;
   doc.font("base");
   y += 18;
 
-  // Bloc paiement + emballage
-  doc.fontSize(10).fillColor("#111").text(
-    `Emballage : ${(order as any).packagingLabel}\nPaiement à effectuer avant le 1er mars, sinon la commande ne sera pas lancée.`,
-    left,
-    y,
-    { width: usableW, lineGap: 2 }
-  );
-  y += 40;
+  // Bloc paiement + emballage (✅ dynamique avec order.payBeforeDate)
+const payBefore =
+  (order as any).payBeforeDate ? new Date((order as any).payBeforeDate) : null;
+
+const payBeforeLabel =
+  payBefore && !Number.isNaN(payBefore.getTime())
+    ? formatDateFRShort(payBefore)
+    : "—";
+
+doc.fontSize(10).fillColor("#111").text(
+  `Emballage : ${(order as any).packagingLabel}\nPaiement à effectuer avant le ${payBeforeLabel}, sinon la commande ne sera pas lancée.`,
+  left,
+  y,
+  { width: usableW, lineGap: 2 }
+);
+y += 40;
 
   // Signature
   doc.fontSize(10).fillColor("#111");
