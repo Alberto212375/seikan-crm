@@ -205,8 +205,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   );
   doc.font("base");
 
-  const kindLabel = (order as any).kind === "TEST" ? "COMMANDE TEST" : "COMMANDE CLASSIQUE";
-  doc.fontSize(11).fillColor("black").text(kindLabel, left, titleY + 20, { width: usableW, align: "center" });
+ // (supprimé) label "COMMANDE TEST / COMMANDE CLASSIQUE" inutile sur le PDF
 
   // Colonnes Émetteur / Destinataire
   const gap = 30;
