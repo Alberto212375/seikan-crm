@@ -47,6 +47,49 @@ function dataUrlLooksOk(s: string) {
   return typeof s === "string" && s.startsWith("data:image/");
 }
 
+// ===============================
+// ✅ AUTOCOMPLETE ADRESSE (gouv)
+// ===============================
+function normalizeSpaces(s: string) {
+  return (s ?? "").replace(/\s+/g, " ").trim();
+}
+
+type AdresseSuggestion = {
+  label: string;
+  street: string;
+  postalCode: string;
+  city: string;
+};
+
+async function fetchAdresseSuggestions(q: string): Promise<AdresseSuggestion[]> {
+  const query = normalizeSpaces(q);
+  if (query.length < 3) return [];
+
+  const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(
+    query
+  )}&limit=6&autocomplete=1`;
+
+  const r = await fetch(url);
+  if (!r.ok) return [];
+
+  const j = await r.json();
+  const features = (j?.features ?? []) as any[];
+
+  return features
+    .map((f) => {
+      const p = f?.properties ?? {};
+      const label = String(p.label ?? "").trim();
+      const postalCode = String(p.postcode ?? "").trim();
+      const city = String(p.city ?? "").trim();
+
+      // "name" = rue + numéro souvent
+      const street = String(p.name ?? label).trim();
+
+      return { label, street, postalCode, city };
+    })
+    .filter((x) => x.label && x.postalCode && x.city);
+}
+
 // ✅ prix unitaire HT en commande classique selon quantité
 function classicUnitEur(totalQty: number) {
   const n = totalQty;
@@ -66,6 +109,31 @@ export default function SkglPage() {
   const [street, setStreet] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [city, setCity] = useState("");
+    // ✅ Autocomplete adresse (menu déroulant)
+  const [openSuggest, setOpenSuggest] = useState(false);
+  const [addrSuggestions, setAddrSuggestions] = useState<AdresseSuggestion[]>([]);
+  const addrDebounceRef = useRef<any>(null);
+
+  function onStreetChange(value: string) {
+    setStreet(value);
+    setOpenSuggest(true);
+
+    if (addrDebounceRef.current) clearTimeout(addrDebounceRef.current);
+
+    addrDebounceRef.current = setTimeout(async () => {
+      const list = await fetchAdresseSuggestions(value);
+      setAddrSuggestions(list);
+    }, 220);
+  }
+
+  function selectAddress(s: AdresseSuggestion) {
+    setStreet(s.street);
+    setPostalCode(s.postalCode);
+    setCity(s.city);
+    setAddrSuggestions([]);
+    setOpenSuggest(false);
+  }
+
   const [companyName, setCompanyName] = useState("");
   const [siret, setSiret] = useState("");
   const [email, setEmail] = useState("");
@@ -429,9 +497,34 @@ export default function SkglPage() {
               <input className="w-full rounded-xl border border-black/15 px-4 py-3" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
 
-            <div className="mt-3">
-              <input className="w-full rounded-xl border border-black/15 px-4 py-3" placeholder="Rue" value={street} onChange={(e) => setStreet(e.target.value)} />
-            </div>
+            <<div className="mt-3">
+  <div className="relative">
+    <input
+      className="w-full rounded-xl border border-black/15 px-4 py-3"
+      placeholder="Rue"
+      value={street}
+      onChange={(e) => onStreetChange(e.target.value)}
+      onFocus={() => setOpenSuggest(true)}
+      onBlur={() => setTimeout(() => setOpenSuggest(false), 120)}
+    />
+
+    {openSuggest && addrSuggestions.length > 0 && (
+      <div className="absolute left-0 right-0 z-50 mt-1 overflow-hidden rounded-xl border border-black/10 bg-white shadow-lg">
+        {addrSuggestions.map((s, idx) => (
+          <button
+            key={`${s.label}-${idx}`}
+            type="button"
+            className="block w-full px-4 py-3 text-left text-sm hover:bg-neutral-50"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => selectAddress(s)}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+    )}
+  </div>
+</div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <input className="rounded-xl border border-black/15 px-4 py-3" placeholder="Code postal" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
               <input className="rounded-xl border border-black/15 px-4 py-3" placeholder="Ville" value={city} onChange={(e) => setCity(e.target.value)} />
