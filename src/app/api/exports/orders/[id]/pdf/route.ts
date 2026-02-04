@@ -348,6 +348,38 @@ const label = isShipping ? `${it.label}` : `${it.ref} — ${it.label} (30×40)`;
     }
   }
 
+  // --- Bloc légal / paiement (sous la signature) ---
+  // On garde une marge de sécurité pour ne pas entrer dans le footer.
+  const LEGAL_BLOCK = [
+    "IBAN : FR76 1213 5003 0004 2562 6218 853",
+    "BIC : CEPAFRPP213",
+    "",
+    "À défaut de règlement à réception (paiement comptant), l’exécution de la commande est suspendue jusqu’à encaissement",
+    "et la livraison pourra être reportée à la clôture de commande suivante.",
+    "Une indemnité forfaitaire de 40 € pour frais de recouvrement sera également exigible (articles L.441-10",
+    "et D.441-5 du Code de commerce).",
+    "Mentions légales :",
+    "- TVA non applicable, art. 293 B du CGI",
+  ].join("\n");
+
+  // Si on est trop bas, on remonte légèrement pour rester avant le footer.
+  // (PdfKit n'a pas de "page break" automatique ici, donc on sécurise.)
+  const safeTop = FOOTER_SAFE_TOP - 92; // zone dispo avant footer
+  if (doc.y > safeTop) {
+    doc.y = safeTop;
+  }
+
+  doc
+    .fontSize(8.8)
+    .fillColor("#111")
+    .text(LEGAL_BLOCK, left, doc.y + 10, {
+      width: usableW,
+      lineGap: 2,
+    });
+
+  // un petit espace après le bloc
+  doc.y += 6;
+
   // Footer
   doc.save();
   doc.font("base").fontSize(8).fillColor("#111");

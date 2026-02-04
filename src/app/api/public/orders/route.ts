@@ -64,20 +64,29 @@ function makeEmailHtml(args: {
   totalCents: number;
 }) {
   const euros = (args.totalCents / 100).toFixed(2).replace(".", ",");
+
   return `
-  <div style="font-family: Arial, sans-serif; color:#111; line-height:1.5">
-    <h2 style="margin:0 0 8px 0">Confirmation de commande — ${args.orderNumber}</h2>
+  <div style="font-family: Arial, sans-serif; color:#111; line-height:1.55">
+    <h2 style="margin:0 0 10px 0">Confirmation de commande — ${args.orderNumber}</h2>
+
     <p style="margin:0 0 10px 0">Bonjour ${args.customerName},</p>
-    <p style="margin:0 0 10px 0">
-      Votre commande est confirmée et signée (“Bon pour accord”). Vous trouverez la commande signée en pièce jointe (PDF).
+
+    <p style="margin:0 0 12px 0">
+      Nous vous remercions pour votre première commande.<br/>
+      Votre commande est confirmée et signée (“Bon pour accord”).
+      Vous trouverez la commande signée en pièce jointe (PDF).
     </p>
-    <p style="margin:0 0 10px 0">
+
+    <p style="margin:0 0 14px 0">
       <strong>Livraison :</strong> ${args.deliveryWindow}<br/>
       <strong>Total :</strong> ${euros} € HT
     </p>
+
     <p style="margin:0">
-      Seikan Gallery<br/>
-      seikan.gallery@gmail.com
+      Seikan Gallery 
+      Xavier CUZIN<br/>
+      seikan.gallery@gmail.com<br/>
+      06.10.38.02.08
     </p>
   </div>
   `;
