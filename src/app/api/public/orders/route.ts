@@ -82,6 +82,11 @@ function makeEmailHtml(args: {
       <strong>Total :</strong> ${euros} € HT
     </p>
 
+    <p style="margin:0 0 12px 0">
+      La commande est à régler en intégralité avant le 01/03/2026 via un virement sur les coordonnées banquaires transmises dans la feuille de commande. 
+      Merci de mettre votre numéro de commande comme intitulé du virement. 
+    </p>
+
     <p style="margin:0">
       Seikan Gallery 
       Xavier CUZIN<br/>

@@ -70,6 +70,66 @@ export default function SkglPage() {
   const [siret, setSiret] = useState("");
   const [email, setEmail] = useState("");
 
+    // --- Autocomplete adresse (BAN) ---
+  const [addrQuery, setAddrQuery] = useState("");
+  const [addrOptions, setAddrOptions] = useState<
+    Array<{ label: string; street: string; postalCode: string; city: string }>
+  >([]);
+  const [addrOpen, setAddrOpen] = useState(false);
+  const [addrLoading, setAddrLoading] = useState(false);
+
+  async function fetchAddrOptions(q: string) {
+    const query = q.trim();
+    if (query.length < 4) {
+      setAddrOptions([]);
+      setAddrOpen(false);
+      return;
+    }
+
+    setAddrLoading(true);
+    try {
+      const resp = await fetch(
+        `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=6`
+      );
+      const data = await resp.json();
+
+      const opts =
+        (data?.features ?? [])
+          .map((f: any) => {
+            const p = f?.properties ?? {};
+            const label = String(p.label ?? "").trim();
+            const street = String(p.name ?? p.street ?? label ?? "").trim();
+            const postalCode = String(p.postcode ?? "").trim();
+            const city = String(p.city ?? "").trim();
+            if (!label || !postalCode || !city) return null;
+            return { label, street, postalCode, city };
+          })
+          .filter(Boolean) ?? [];
+
+      setAddrOptions(opts);
+      setAddrOpen(opts.length > 0);
+    } catch {
+      setAddrOptions([]);
+      setAddrOpen(false);
+    } finally {
+      setAddrLoading(false);
+    }
+  }
+
+  function chooseAddress(opt: {
+    label: string;
+    street: string;
+    postalCode: string;
+    city: string;
+  }) {
+    setAddrQuery(opt.label);
+    setStreet(opt.street);
+    setPostalCode(opt.postalCode);
+    setCity(opt.city);
+    setAddrOpen(false);
+    setAddrOptions([]);
+  }
+
   const [kind, setKind] = useState<"TEST" | "CLASSIC">("TEST");
 
   // qty per poster
@@ -399,12 +459,67 @@ export default function SkglPage() {
               <input className="w-full rounded-xl border border-black/15 px-4 py-3" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
 
-            <div className="mt-3">
-              <input className="w-full rounded-xl border border-black/15 px-4 py-3" placeholder="Rue" value={street} onChange={(e) => setStreet(e.target.value)} />
+                        {/* ✅ Adresse avec autocomplete + auto-remplissage CP/Ville */}
+            <div className="mt-3 relative">
+              <input
+                className="w-full rounded-xl border border-black/15 px-4 py-3 outline-none focus:border-black/30"
+                placeholder="Adresse (ex: 5 Rue de Normandie)"
+                value={addrQuery}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setAddrQuery(v);
+                  // on laisse aussi street suivre la saisie libre tant que pas sélectionné
+                  setStreet(v);
+                  fetchAddrOptions(v);
+                }}
+                onFocus={() => {
+                  if (addrOptions.length > 0) setAddrOpen(true);
+                }}
+                onBlur={() => {
+                  // petit délai pour laisser le clic sur une option
+                  setTimeout(() => setAddrOpen(false), 150);
+                }}
+              />
+
+              {addrOpen ? (
+                <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-black/10 bg-white shadow-sm">
+                  {addrLoading ? (
+                    <div className="px-4 py-3 text-sm text-black/60">Recherche…</div>
+                  ) : addrOptions.length === 0 ? (
+                    <div className="px-4 py-3 text-sm text-black/60">Aucune suggestion.</div>
+                  ) : (
+                    addrOptions.map((opt, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className="block w-full px-4 py-3 text-left text-sm hover:bg-black/5"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => chooseAddress(opt)}
+                      >
+                        <div className="font-medium text-black">{opt.label}</div>
+                        <div className="text-xs text-black/60">
+                          {opt.postalCode} {opt.city}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : null}
             </div>
+
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <input className="rounded-xl border border-black/15 px-4 py-3" placeholder="Code postal" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
-              <input className="rounded-xl border border-black/15 px-4 py-3" placeholder="Ville" value={city} onChange={(e) => setCity(e.target.value)} />
+              <input
+                className="rounded-xl border border-black/15 px-4 py-3"
+                placeholder="Code postal"
+                value={postalCode}
+                onChange={(e) => setPostalCode(e.target.value)}
+              />
+              <input
+                className="rounded-xl border border-black/15 px-4 py-3"
+                placeholder="Ville"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+              />
             </div>
 
             <div className="mt-5">
@@ -545,7 +660,11 @@ export default function SkglPage() {
                   <div className="text-xs text-black/60">{p.label}</div>
 
                   <div className="mt-3 overflow-hidden rounded-xl border border-black/10 bg-black/5">
-                    <img src={p.imageSrc} alt={p.label} className="h-44 w-full object-cover" />
+                    <img
+  src={p.imageSrc}
+  alt={p.label}
+  className="h-44 w-full object-contain object-center"
+/>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between">
