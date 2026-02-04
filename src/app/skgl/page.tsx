@@ -57,7 +57,7 @@ function classicUnitEur(totalQty: number) {
 }
 
 export default function SkglPage() {
-  const [code, setCode] = useState(CODE);
+  const [code, setCode] = useState("");
   const okCode = code.trim().toLowerCase() === CODE;
 
   // client fields

@@ -18,13 +18,15 @@ export function middleware(req: NextRequest) {
 
   // Zones à protéger
   const isProtected =
-    pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/prospects") ||
-    pathname.startsWith("/clients") ||
-    pathname.startsWith("/devis") ||
-    pathname.startsWith("/facturation") ||
-    pathname.startsWith("/archives") ||
-    pathname.startsWith("/settings");
+  pathname.startsWith("/dashboard") ||
+  pathname.startsWith("/prospects") ||
+  pathname.startsWith("/clients") ||
+  pathname.startsWith("/devis") ||
+  pathname.startsWith("/depot-vente") ||   // ✅ AJOUT
+  pathname.startsWith("/commandes") ||     // ✅ AJOUT
+  pathname.startsWith("/facturation") ||
+  pathname.startsWith("/archives") ||
+  pathname.startsWith("/settings");
 
   if (!isProtected) return NextResponse.next();
 
