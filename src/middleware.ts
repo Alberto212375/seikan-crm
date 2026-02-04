@@ -4,6 +4,18 @@ import type { NextRequest } from "next/server";
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+    // ✅ BYPASS (pages publiques + assets + API publique)
+  if (
+    pathname.startsWith("/_next") ||
+    pathname === "/next.svg" ||
+    pathname === "/favicon.ico" ||
+    pathname.startsWith("/posters/") ||
+    pathname.startsWith("/skgl") ||
+    pathname.startsWith("/api/public/")
+  ) {
+    return NextResponse.next();
+  }
+
   // Zones à protéger
   const isProtected =
     pathname.startsWith("/dashboard") ||
