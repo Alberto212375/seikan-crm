@@ -1,7 +1,7 @@
 // src/app/api/public/orders/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { OrderKind } from "@prisma/client";
+import { getTransporter } from "@/lib/mailer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,23 +9,13 @@ export const dynamic = "force-dynamic";
 function normalize(s: unknown) {
   return String(s ?? "").trim();
 }
-
 function toInt(n: unknown, def = 0) {
   const x = Number(n);
   if (!Number.isFinite(x)) return def;
   return Math.trunc(x);
 }
-
 function pad6(n: number) {
   return String(n).padStart(6, "0");
-}
-
-function parseSeqFromNumber(numberStr: string): number {
-  // CMD-YYYY-000123
-  const parts = String(numberStr || "").split("-");
-  const seq = parts[2] ?? "";
-  const n = parseInt(seq, 10);
-  return Number.isFinite(n) ? n : 0;
 }
 
 type PublicOrderItem = {
@@ -37,7 +27,7 @@ type PublicOrderItem = {
 };
 
 type PublicOrderPayload = {
-  code?: string; // stocké dans metaJson seulement
+  code?: string;
   kind?: "TEST" | "CLASSIC";
 
   firstName: string;
@@ -51,12 +41,10 @@ type PublicOrderPayload = {
   postalCode: string;
   city: string;
 
-  deliveryWindowLabel?: string; // optionnel, sinon default DB
-  packagingLabel?: string; // optionnel, sinon default DB
-  payBeforeDate?: string; // ISO string, optionnel
+  deliveryWindowLabel?: string;
+  packagingLabel?: string;
 
   totalCents?: number;
-
   items: PublicOrderItem[];
 
   signature: {
@@ -64,10 +52,36 @@ type PublicOrderPayload = {
     signerFirstName?: string;
     signerLastName?: string;
     signerRole?: string;
-    signedAt?: string; // ISO
-    signatureDataUrl?: string; // data:image/...
+    signedAt?: string;
+    signatureDataUrl?: string;
   };
 };
+
+function makeEmailHtml(args: {
+  orderNumber: string;
+  customerName: string;
+  deliveryWindow: string;
+  totalCents: number;
+}) {
+  const euros = (args.totalCents / 100).toFixed(2).replace(".", ",");
+  return `
+  <div style="font-family: Arial, sans-serif; color:#111; line-height:1.5">
+    <h2 style="margin:0 0 8px 0">Confirmation de commande — ${args.orderNumber}</h2>
+    <p style="margin:0 0 10px 0">Bonjour ${args.customerName},</p>
+    <p style="margin:0 0 10px 0">
+      Votre commande est confirmée et signée (“Bon pour accord”). Vous trouverez la commande signée en pièce jointe (PDF).
+    </p>
+    <p style="margin:0 0 10px 0">
+      <strong>Livraison :</strong> ${args.deliveryWindow}<br/>
+      <strong>Total :</strong> ${euros} € HT
+    </p>
+    <p style="margin:0">
+      Seikan Gallery<br/>
+      seikan.gallery@gmail.com
+    </p>
+  </div>
+  `;
+}
 
 export async function POST(req: Request) {
   try {
@@ -76,7 +90,6 @@ export async function POST(req: Request) {
     const firstName = normalize(body.firstName);
     const lastName = normalize(body.lastName);
     const email = normalize(body.email);
-
     const companyName = body.companyName ? normalize(body.companyName) : null;
     const siret = body.siret ? normalize(body.siret) : null;
 
@@ -85,38 +98,19 @@ export async function POST(req: Request) {
     const city = normalize(body.city);
 
     const code = normalize(body.code || "skgl").toLowerCase();
+    const kind = body.kind === "CLASSIC" ? "CLASSIC" : "TEST";
 
-    const kind: OrderKind = body.kind === "CLASSIC" ? OrderKind.CLASSIC : OrderKind.TEST;
-
-    // si payload vide -> on laisse les defaults Prisma
-    const deliveryWindowLabel = normalize(body.deliveryWindowLabel || "");
-    const packagingLabel = normalize(body.packagingLabel || "");
-
-    // paiement avant : si non fourni, on met +10 jours (simple et safe)
-    const payBeforeDateRaw = normalize(body.payBeforeDate || "");
-    const payBeforeDate =
-      payBeforeDateRaw && !Number.isNaN(new Date(payBeforeDateRaw).getTime())
-        ? new Date(payBeforeDateRaw)
-        : (() => {
-            const d = new Date();
-            d.setDate(d.getDate() + 10);
-            return d;
-          })();
+    const deliveryWindowLabel = normalize(body.deliveryWindowLabel || "Livraison entre le 12 et le 15 mars");
+    const packagingLabel = normalize(body.packagingLabel || "Emballage en pochette plastique + carton rigide");
 
     const sig = body.signature ?? ({} as any);
     const accepted = Boolean(sig.accepted);
     const signatureDataUrl = normalize(sig.signatureDataUrl || "");
-    const signedAtIso = normalize(sig.signedAt || new Date().toISOString());
+    const signedAt = normalize(sig.signedAt || new Date().toISOString());
 
-    if (!firstName || !lastName) {
-      return NextResponse.json({ error: "Prénom et nom obligatoires." }, { status: 400 });
-    }
-    if (!email) {
-      return NextResponse.json({ error: "Email obligatoire." }, { status: 400 });
-    }
-    if (!street || !postalCode || !city) {
-      return NextResponse.json({ error: "Adresse complète obligatoire." }, { status: 400 });
-    }
+    if (!firstName || !lastName) return NextResponse.json({ error: "Prénom et nom obligatoires." }, { status: 400 });
+    if (!email) return NextResponse.json({ error: "Email obligatoire." }, { status: 400 });
+    if (!street || !postalCode || !city) return NextResponse.json({ error: "Adresse complète obligatoire." }, { status: 400 });
     if (!accepted || !signatureDataUrl.startsWith("data:image/")) {
       return NextResponse.json({ error: "Bon pour accord + signature obligatoires." }, { status: 400 });
     }
@@ -136,62 +130,41 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Aucun article dans la commande." }, { status: 400 });
     }
 
-    // total serveur
     const computedTotal = normalizedItems.reduce((s, it) => s + it.qty * it.unitPriceCents, 0);
     const totalCents = Math.max(0, toInt(body.totalCents, computedTotal)) || computedTotal;
 
-    const signatureMeta = {
-      accepted: true,
-      signerFirstName: normalize(sig.signerFirstName || firstName),
-      signerLastName: normalize(sig.signerLastName || lastName),
-      signerRole: normalize(sig.signerRole || "Client") || "Client",
-      signedAt: signedAtIso,
-      signatureDataUrl,
-      context: {
-        ip: req.headers.get("x-forwarded-for") ?? undefined,
-        userAgent: req.headers.get("user-agent") ?? undefined,
-      },
-    };
+    // Numérotation + payBeforeDate
+    const agg = await prisma.order.aggregate({ _max: { seq: true } });
+    const nextSeq = (agg._max.seq ?? 0) + 1;
+    const year = new Date().getFullYear();
+    const number = `CMD-${year}-${pad6(nextSeq)}`;
 
-    // metaJson (ton PDF le lit déjà via metaJson.signature)
+    // Paiement avant le 1er mars (comme ton PDF)
+    const payBeforeDate = new Date(`${year}-03-01T00:00:00.000Z`);
+
+    // metaJson.signature (exactement comme ton PDF le lit)
     const metaJson = JSON.stringify({
       code,
       kind,
-      deliveryWindowLabel: deliveryWindowLabel || undefined,
-      packagingLabel: packagingLabel || undefined,
-      pricing: {
-        totalCents,
-        computedTotalCents: computedTotal,
+      deliveryWindowLabel,
+      packagingLabel,
+      pricing: { totalCents, computedTotalCents: computedTotal },
+      signature: {
+        accepted: true,
+        signerFirstName: normalize(sig.signerFirstName || firstName),
+        signerLastName: normalize(sig.signerLastName || lastName),
+        signerRole: normalize(sig.signerRole || "Client") || "Client",
+        signedAt,
+        signatureDataUrl,
       },
-      signature: signatureMeta,
     });
-
-    // numérotation CMD-YYYY-000001 (séquence par année)
-    const year = new Date().getFullYear();
-    const prefix = `CMD-${year}-`;
-
-    const lastThisYear = await prisma.order.findFirst({
-      where: { number: { startsWith: prefix } },
-      orderBy: { number: "desc" },
-      select: { number: true },
-    });
-
-    const lastYearSeq = lastThisYear?.number ? parseSeqFromNumber(lastThisYear.number) : 0;
-    const nextYearSeq = lastYearSeq + 1;
-    const number = `${prefix}${pad6(nextYearSeq)}`;
-
-    // seq global unique
-    const agg = await prisma.order.aggregate({ _max: { seq: true } });
-    const nextSeq = (agg._max.seq ?? 0) + 1;
 
     const order = await prisma.order.create({
       data: {
         seq: nextSeq,
         number,
-
         kind,
         status: "PENDING_PAYMENT",
-
         firstName,
         lastName,
         email,
@@ -200,20 +173,11 @@ export async function POST(req: Request) {
         street,
         postalCode,
         city,
-
-        // si vide => defaults Prisma
-        ...(packagingLabel ? { packagingLabel } : {}),
-        ...(deliveryWindowLabel ? { deliveryWindowLabel } : {}),
-
+        packagingLabel,
+        deliveryWindowLabel,
         payBeforeDate,
-        totalCents,
-
-        // signature + code dans metaJson
         metaJson,
-
-        // signedAt DB (utile filtre/status)
-        signedAt: new Date(signedAtIso),
-
+        totalCents,
         items: {
           create: normalizedItems.map((it) => ({
             ref: it.ref,
@@ -225,6 +189,52 @@ export async function POST(req: Request) {
         },
       },
       include: { items: true },
+    });
+
+    // --- Génération PDF via ta route existante /api/exports/orders/[id]/pdf ---
+    const origin = new URL(req.url).origin;
+    const pdfUrl = `${origin}/api/exports/orders/${order.id}/pdf`;
+    const pdfResp = await fetch(pdfUrl, { method: "GET" });
+
+    if (!pdfResp.ok) {
+      const txt = await pdfResp.text().catch(() => "");
+      console.error("ORDER PDF EXPORT FAILED", { status: pdfResp.status, txt });
+      return NextResponse.json(
+        { error: `Commande créée mais PDF impossible (${pdfResp.status}).` },
+        { status: 500 }
+      );
+    }
+
+    const pdfArrayBuffer = await pdfResp.arrayBuffer();
+    const pdfBuffer = Buffer.from(pdfArrayBuffer);
+
+    // --- Envoi mail ---
+    const smtpFrom = process.env.SMTP_FROM || process.env.SMTP_USER || "seikan.gallery@gmail.com";
+    const proCopyTo = process.env.ORDERS_BCC || smtpFrom;
+
+    const transporter = getTransporter();
+
+    const subject = `Seikan Gallery — Commande signée ${order.number}`;
+    const html = makeEmailHtml({
+      orderNumber: order.number,
+      customerName: `${firstName} ${lastName}`.trim(),
+      deliveryWindow: deliveryWindowLabel,
+      totalCents,
+    });
+
+    await transporter.sendMail({
+      from: `SEIKAN GALLERY <${smtpFrom}>`,
+      to: email,
+      bcc: proCopyTo,
+      subject,
+      html,
+      attachments: [
+        {
+          filename: `Commande_${order.number}.pdf`,
+          content: pdfBuffer,
+          contentType: "application/pdf",
+        },
+      ],
     });
 
     return NextResponse.json({ ok: true, orderId: order.id, number: order.number });
