@@ -70,66 +70,6 @@ export default function SkglPage() {
   const [siret, setSiret] = useState("");
   const [email, setEmail] = useState("");
 
-    // --- Autocomplete adresse (BAN) ---
-  const [addrQuery, setAddrQuery] = useState("");
-  const [addrOptions, setAddrOptions] = useState<
-    Array<{ label: string; street: string; postalCode: string; city: string }>
-  >([]);
-  const [addrOpen, setAddrOpen] = useState(false);
-  const [addrLoading, setAddrLoading] = useState(false);
-
-  async function fetchAddrOptions(q: string) {
-    const query = q.trim();
-    if (query.length < 4) {
-      setAddrOptions([]);
-      setAddrOpen(false);
-      return;
-    }
-
-    setAddrLoading(true);
-    try {
-      const resp = await fetch(
-        `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=6`
-      );
-      const data = await resp.json();
-
-      const opts =
-        (data?.features ?? [])
-          .map((f: any) => {
-            const p = f?.properties ?? {};
-            const label = String(p.label ?? "").trim();
-            const street = String(p.name ?? p.street ?? label ?? "").trim();
-            const postalCode = String(p.postcode ?? "").trim();
-            const city = String(p.city ?? "").trim();
-            if (!label || !postalCode || !city) return null;
-            return { label, street, postalCode, city };
-          })
-          .filter(Boolean) ?? [];
-
-      setAddrOptions(opts);
-      setAddrOpen(opts.length > 0);
-    } catch {
-      setAddrOptions([]);
-      setAddrOpen(false);
-    } finally {
-      setAddrLoading(false);
-    }
-  }
-
-  function chooseAddress(opt: {
-    label: string;
-    street: string;
-    postalCode: string;
-    city: string;
-  }) {
-    setAddrQuery(opt.label);
-    setStreet(opt.street);
-    setPostalCode(opt.postalCode);
-    setCity(opt.city);
-    setAddrOpen(false);
-    setAddrOptions([]);
-  }
-
   const [kind, setKind] = useState<"TEST" | "CLASSIC">("TEST");
 
   // qty per poster
@@ -147,6 +87,7 @@ export default function SkglPage() {
   const lastPt = useRef<{ x: number; y: number } | null>(null);
 
   const [signatureDataUrl, setSignatureDataUrl] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const totalQty = useMemo(() => {
     return Object.values(qty).reduce((s, n) => s + (Number(n) || 0), 0);
@@ -279,6 +220,7 @@ export default function SkglPage() {
 
   async function submit() {
   if (!canSubmit) return;
+  setIsSubmitting(true);
 
   // ✅ items posters avec PU calculé selon TEST/CLASSIC
   const unitPriceCents = Math.round(unitEur * 100);
@@ -373,6 +315,23 @@ export default function SkglPage() {
         rawText ||
         "Erreur inconnue (réponse vide).";
 
+        if (!resp.ok) {
+  const msg =
+    (data && (data.error || data.message)) ||
+    rawText ||
+    "Erreur inconnue (réponse vide).";
+
+  setIsSubmitting(false);
+  alert(`Erreur (${resp.status}) : ${msg}`);
+  console.error("POST /api/public/orders FAILED", {
+    status: resp.status,
+    rawText,
+    data,
+    payloadSent: payload,
+  });
+  return;
+}
+
       alert(`Erreur (${resp.status}) : ${msg}`);
       console.error("POST /api/public/orders FAILED", {
         status: resp.status,
@@ -383,11 +342,13 @@ export default function SkglPage() {
       return;
     }
 
+    setIsSubmitting(false);
     alert("Commande envoyée ✅ Vous allez recevoir un email avec le PDF signé.");
   } catch (e: any) {
-    alert(`Erreur réseau : ${e?.message || "inconnue"}`);
-    console.error("POST /api/public/orders NETWORK ERROR", e);
-  }
+  setIsSubmitting(false);
+  alert(`Erreur réseau : ${e?.message || "inconnue"}`);
+  console.error("POST /api/public/orders NETWORK ERROR", e);
+}
 }
 
 
@@ -410,8 +371,17 @@ export default function SkglPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F9F9FA] px-4 py-10">
-      <div className="mx-auto max-w-5xl space-y-6">
+  <div className="min-h-screen bg-[#F9F9FA] px-4 py-10">
+    {isSubmitting && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/70 backdrop-blur-sm">
+        <div className="rounded-2xl border border-black/10 bg-white px-8 py-6 shadow-lg">
+          <div className="text-lg font-semibold text-black">Envoi en cours…</div>
+          <div className="mt-2 text-sm text-black/60">Merci de patienter quelques secondes</div>
+        </div>
+      </div>
+    )}
+
+    <div className="mx-auto max-w-5xl space-y-6">
         <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
           <h1 className="text-2xl font-semibold">Commande Posters 30×40</h1>
 
@@ -459,67 +429,12 @@ export default function SkglPage() {
               <input className="w-full rounded-xl border border-black/15 px-4 py-3" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
 
-                        {/* ✅ Adresse avec autocomplete + auto-remplissage CP/Ville */}
-            <div className="mt-3 relative">
-              <input
-                className="w-full rounded-xl border border-black/15 px-4 py-3 outline-none focus:border-black/30"
-                placeholder="Adresse (ex: 5 Rue de Normandie)"
-                value={addrQuery}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setAddrQuery(v);
-                  // on laisse aussi street suivre la saisie libre tant que pas sélectionné
-                  setStreet(v);
-                  fetchAddrOptions(v);
-                }}
-                onFocus={() => {
-                  if (addrOptions.length > 0) setAddrOpen(true);
-                }}
-                onBlur={() => {
-                  // petit délai pour laisser le clic sur une option
-                  setTimeout(() => setAddrOpen(false), 150);
-                }}
-              />
-
-              {addrOpen ? (
-                <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-black/10 bg-white shadow-sm">
-                  {addrLoading ? (
-                    <div className="px-4 py-3 text-sm text-black/60">Recherche…</div>
-                  ) : addrOptions.length === 0 ? (
-                    <div className="px-4 py-3 text-sm text-black/60">Aucune suggestion.</div>
-                  ) : (
-                    addrOptions.map((opt, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        className="block w-full px-4 py-3 text-left text-sm hover:bg-black/5"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => chooseAddress(opt)}
-                      >
-                        <div className="font-medium text-black">{opt.label}</div>
-                        <div className="text-xs text-black/60">
-                          {opt.postalCode} {opt.city}
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              ) : null}
+            <div className="mt-3">
+              <input className="w-full rounded-xl border border-black/15 px-4 py-3" placeholder="Rue" value={street} onChange={(e) => setStreet(e.target.value)} />
             </div>
-
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <input
-                className="rounded-xl border border-black/15 px-4 py-3"
-                placeholder="Code postal"
-                value={postalCode}
-                onChange={(e) => setPostalCode(e.target.value)}
-              />
-              <input
-                className="rounded-xl border border-black/15 px-4 py-3"
-                placeholder="Ville"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-              />
+              <input className="rounded-xl border border-black/15 px-4 py-3" placeholder="Code postal" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
+              <input className="rounded-xl border border-black/15 px-4 py-3" placeholder="Ville" value={city} onChange={(e) => setCity(e.target.value)} />
             </div>
 
             <div className="mt-5">
@@ -631,7 +546,7 @@ export default function SkglPage() {
 
               <button
                 type="button"
-                disabled={!canSubmit}
+                disabled={isSubmitting || !canSubmit}
                 onClick={submit}
                 className={`mt-5 w-full rounded-2xl px-5 py-3 text-sm font-semibold shadow-sm ${
                   canSubmit ? "bg-black text-white" : "bg-black/20 text-black/40"
@@ -665,6 +580,7 @@ export default function SkglPage() {
   alt={p.label}
   className="h-44 w-full object-contain object-center"
 />
+
                   </div>
 
                   <div className="mt-3 flex items-center justify-between">
