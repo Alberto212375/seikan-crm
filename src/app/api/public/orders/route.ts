@@ -53,6 +53,34 @@ function classicUnitEur(totalQty: number) {
   return 0; // <10 : pas autorisé
 }
 
+function firstBusinessDayOfMonthISO(year: number, monthIndex0: number) {
+  const d = new Date(Date.UTC(year, monthIndex0, 1));
+  const day = d.getUTCDay(); // 0 dim, 6 sam
+  if (day === 6) d.setUTCDate(d.getUTCDate() + 2); // samedi -> lundi
+  if (day === 0) d.setUTCDate(d.getUTCDate() + 1); // dimanche -> lundi
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+
+function allowedClassicClosuresISO(now = new Date()) {
+  const list: string[] = [];
+  let cursor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+  while (list.length < 2) {
+    const y = cursor.getUTCFullYear();
+    const m0 = cursor.getUTCMonth();
+    const mm = m0 + 1;
+
+    // ✅ skip mars (03)
+    if (mm !== 3) {
+      list.push(firstBusinessDayOfMonthISO(y, m0));
+    }
+
+    cursor = new Date(Date.UTC(y, m0 + 1, 1));
+  }
+
+  return list;
+}
+
 type PublicOrderItem = {
   ref: string;
   label: string;
@@ -180,18 +208,27 @@ export async function POST(req: Request) {
     // --- livraison + payBeforeDate (recalcul serveur) ---
     let deliveryWindowLabel = normalize(body.deliveryWindowLabel || "Livraison entre le 12 et le 15 mars");
     let payBeforeDate = new Date(`${new Date().getFullYear()}-03-01T00:00:00.000Z`);
+if (kind === "CLASSIC") {
+  if (!closureDateISO) {
+    return NextResponse.json({ error: "Clôture obligatoire pour une commande classique." }, { status: 400 });
+  }
 
-    if (kind === "CLASSIC") {
-      if (!closureDateISO) {
-        return NextResponse.json({ error: "Clôture obligatoire pour une commande classique." }, { status: 400 });
-      }
-      const computedDelivery = deliveryWindowFromClosureISO(closureDateISO);
-      if (!computedDelivery) {
-        return NextResponse.json({ error: "Clôture invalide." }, { status: 400 });
-      }
-      deliveryWindowLabel = computedDelivery;
-      payBeforeDate = new Date(`${closureDateISO}T00:00:00.000Z`);
-    }
+  const allowed = allowedClassicClosuresISO(new Date());
+  if (!allowed.includes(closureDateISO)) {
+    return NextResponse.json(
+      { error: "Clôture non autorisée (merci de choisir une des 2 prochaines clôtures proposées)." },
+      { status: 400 }
+    );
+  }
+
+  const computedDelivery = deliveryWindowFromClosureISO(closureDateISO);
+  if (!computedDelivery) {
+    return NextResponse.json({ error: "Clôture invalide." }, { status: 400 });
+  }
+
+  deliveryWindowLabel = computedDelivery;
+  payBeforeDate = new Date(`${closureDateISO}T00:00:00.000Z`);
+}
 
     // --- items (nettoyage) ---
     const items = Array.isArray(body.items) ? body.items : [];

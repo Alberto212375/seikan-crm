@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +79,34 @@ function deliveryWindowFromClosure(closureISO: string) {
   const d15 = new Date(base);
   d15.setUTCDate(d15.getUTCDate() + 15);
   return `Livraison entre le ${fmtFR(d12)} et le ${fmtFR(d15)}`;
+}
+
+function firstBusinessDayOfMonthISO(year: number, monthIndex0: number) {
+  const d = new Date(Date.UTC(year, monthIndex0, 1));
+  const day = d.getUTCDay(); // 0 dim, 6 sam
+  if (day === 6) d.setUTCDate(d.getUTCDate() + 2); // samedi -> lundi
+  if (day === 0) d.setUTCDate(d.getUTCDate() + 1); // dimanche -> lundi
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+
+function allowedClassicClosuresISO(now = new Date()) {
+  const list: string[] = [];
+  let cursor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+  while (list.length < 2) {
+    const y = cursor.getUTCFullYear();
+    const m0 = cursor.getUTCMonth();
+    const mm = m0 + 1;
+
+    // ✅ skip mars (03)
+    if (mm !== 3) {
+      list.push(firstBusinessDayOfMonthISO(y, m0));
+    }
+
+    cursor = new Date(Date.UTC(y, m0 + 1, 1));
+  }
+
+  return list;
 }
 
 // ===============================
@@ -175,26 +203,45 @@ export default function SkglPage() {
 
   const [kind, setKind] = useState<"TEST" | "CLASSIC">("TEST");
 
-  // ✅ Clôture (commande classique) : liste des 12 prochains mois
+  // ✅ Clôture (commande classique) : seulement les 2 prochaines clôtures
+// Exception : on saute mars (op spéciale), donc on propose avril + mai.
 const closureOptions = useMemo(() => {
   const now = new Date();
+
+  // on part du mois courant, mais on SKIP mars (03)
   const list: { key: string; label: string; closureISO: string }[] = [];
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    const closure = firstBusinessDayOfMonth(d.getFullYear(), d.getMonth());
-    const key = monthKey(d);
-    const closureISO = `${closure.getFullYear()}-${pad2(closure.getMonth() + 1)}-${pad2(closure.getDate())}`;
-    const label = `${key} — clôture le ${fmtFR(closure)}`;
-    list.push({ key, label, closureISO });
+  let cursor = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  while (list.length < 2) {
+    const y = cursor.getFullYear();
+    const m0 = cursor.getMonth(); // 0..11
+    const mm = m0 + 1;
+
+    // ✅ skip mars
+    if (mm !== 3) {
+      const closure = firstBusinessDayOfMonth(y, m0);
+      const key = monthKey(cursor); // YYYY-MM
+      const closureISO = `${closure.getFullYear()}-${pad2(closure.getMonth() + 1)}-${pad2(
+        closure.getDate()
+      )}`;
+      const label = `${key} — clôture le ${fmtFR(closure)}`;
+      list.push({ key, label, closureISO });
+    }
+
+    // mois suivant
+    cursor = new Date(y, m0 + 1, 1);
   }
+
   return list;
 }, []);
 
-const [classicClosureKey, setClassicClosureKey] = useState<string>(() => {
-  // par défaut : mois courant
-  const now = new Date();
-  return monthKey(now);
-});
+const [classicClosureKey, setClassicClosureKey] = useState<string>("");
+
+useEffect(() => {
+  if (!classicClosureKey && closureOptions.length > 0) {
+    setClassicClosureKey(closureOptions[0].key);
+  }
+}, [classicClosureKey, closureOptions]);
 
 const classicClosureISO = useMemo(() => {
   const found = closureOptions.find((x) => x.key === classicClosureKey) ?? closureOptions[0];
@@ -625,7 +672,30 @@ packagingLabel: PACKAGING_LABEL,
   ? `Min ${MIN_TEST} / Max ${MAX_TEST}`
   : `Min ${MIN_CLASSIC_TOTAL} posters au total — min ${MIN_CLASSIC_PER_VISUAL} par visuel — pas de maximum`}
               </div>
-            </div>
+                        </div>
+
+            {kind === "CLASSIC" ? (
+              <div className="mt-4 rounded-xl border border-black/10 bg-black/5 px-4 py-3 text-sm">
+                <div className="font-medium">Clôture de commande</div>
+
+                <select
+                  className="mt-2 w-full rounded-xl border border-black/15 bg-white px-4 py-3"
+                  value={classicClosureKey}
+                  onChange={(e) => setClassicClosureKey(e.target.value)}
+                >
+                  {closureOptions.map((o) => (
+                    <option key={o.key} value={o.key}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="mt-2 text-xs text-black/60">
+                  Livraison calculée automatiquement :{" "}
+                  <span className="font-medium">{deliveryWindowLabel}</span>
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-5 rounded-xl border border-black/10 bg-black/5 px-4 py-3 text-sm">
               <div className="font-medium">Emballage</div>
