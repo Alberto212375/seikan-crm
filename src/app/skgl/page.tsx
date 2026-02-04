@@ -286,138 +286,121 @@ export default function SkglPage() {
     setSignatureDataUrl("");
   }
 
-  async function submit() {
-  if (!canSubmit) return;
-  setIsSubmitting(true);
+    async function submit() {
+    if (!canSubmit) return;
+    setIsSubmitting(true);
 
-  // ✅ items posters avec PU calculé selon TEST/CLASSIC
-  const unitPriceCents = Math.round(unitEur * 100);
+    // ✅ items posters avec PU calculé selon TEST/CLASSIC
+    const unitPriceCents = Math.round(unitEur * 100);
 
-  const posterItems = POSTERS.map((p, idx) => ({
-    ref: p.ref,
-    label: p.label,
-    qty: Number(qty[p.ref] || 0),
-    unitPriceCents,
-    sort: idx,
-  })).filter((x) => x.qty > 0);
+    const posterItems = POSTERS.map((p, idx) => ({
+      ref: p.ref,
+      label: p.label,
+      qty: Number(qty[p.ref] || 0),
+      unitPriceCents,
+      sort: idx,
+    })).filter((x) => x.qty > 0);
 
-  // ✅ ligne livraison seulement si CLASSIC (avec 0 ou 20)
-  const shippingItem =
-    kind === "CLASSIC"
-      ? [
-          {
-            ref: "LIVRAISON",
-            label:
-              shippingEur === 0
-                ? `Livraison offerte (Franco supérieur à ${FRANCO_CLASSIC_EUR}€ HT)`
-                : `Frais de livraison (Franco supérieur à ${FRANCO_CLASSIC_EUR}€ HT)`,
-            qty: 1,
-            unitPriceCents: Math.round(shippingEur * 100),
-            sort: 9998,
-          },
-        ]
-      : [];
+    // ✅ ligne livraison seulement si CLASSIC (avec 0 ou 20)
+    const shippingItem =
+      kind === "CLASSIC"
+        ? [
+            {
+              ref: "LIVRAISON",
+              label:
+                shippingEur === 0
+                  ? `Livraison offerte (Franco supérieur à ${FRANCO_CLASSIC_EUR}€ HT)`
+                  : `Frais de livraison (Franco supérieur à ${FRANCO_CLASSIC_EUR}€ HT)`,
+              qty: 1,
+              unitPriceCents: Math.round(shippingEur * 100),
+              sort: 9998,
+            },
+          ]
+        : [];
 
-  const items = [...posterItems, ...shippingItem];
+    const items = [...posterItems, ...shippingItem];
 
-  const payload = {
-    code: CODE,
-    kind,
-    firstName: firstName.trim(),
-    lastName: lastName.trim(),
-    email: email.trim(),
-    companyName: companyName.trim() || null,
-    siret: siret.trim() || null,
-    street: street.trim(),
-    postalCode: postalCode.trim(),
-    city: city.trim(),
+    const payload = {
+      code: CODE,
+      kind,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.trim(),
+      companyName: companyName.trim() || null,
+      siret: siret.trim() || null,
+      street: street.trim(),
+      postalCode: postalCode.trim(),
+      city: city.trim(),
 
-    deliveryWindowLabel: DELIVERY_LABEL,
-    packagingLabel: PACKAGING_LABEL,
+      deliveryWindowLabel: DELIVERY_LABEL,
+      packagingLabel: PACKAGING_LABEL,
 
-    // ✅ total HT incluant livraison si classique
-    totalCents: Math.round(totalEur * 100),
+      // ✅ total HT incluant livraison si classique
+      totalCents: Math.round(totalEur * 100),
 
-    pricing: {
-      postersUnitEur: unitEur,
-      postersSubtotalEur,
-      francoClassicEur: FRANCO_CLASSIC_EUR,
-      shippingEur,
-      totalEur,
-    },
+      pricing: {
+        postersUnitEur: unitEur,
+        postersSubtotalEur,
+        francoClassicEur: FRANCO_CLASSIC_EUR,
+        shippingEur,
+        totalEur,
+      },
 
-    items,
+      items,
 
-    signature: {
-      accepted: true,
-      signerFirstName: firstName.trim(),
-      signerLastName: lastName.trim(),
-      signerRole: "Client",
-      signedAt: new Date().toISOString(),
-      signatureDataUrl,
-    },
-  };
+      signature: {
+        accepted: true,
+        signerFirstName: firstName.trim(),
+        signerLastName: lastName.trim(),
+        signerRole: "Client",
+        signedAt: new Date().toISOString(),
+        signatureDataUrl,
+      },
+    };
 
-  let resp: Response | null = null;
-  let rawText = "";
-  let data: any = null;
+    let resp: Response | null = null;
+    let rawText = "";
+    let data: any = null;
 
-  try {
-    resp = await fetch("/api/public/orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    // ✅ on lit d’abord en texte (car parfois ce n’est pas du JSON)
-    rawText = await resp.text();
     try {
-      data = rawText ? JSON.parse(rawText) : null;
-    } catch {
-      data = null;
-    }
-
-    if (!resp.ok) {
-      const msg =
-        (data && (data.error || data.message)) ||
-        rawText ||
-        "Erreur inconnue (réponse vide).";
-
-        if (!resp.ok) {
-  const msg =
-    (data && (data.error || data.message)) ||
-    rawText ||
-    "Erreur inconnue (réponse vide).";
-
-  setIsSubmitting(false);
-  alert(`Erreur (${resp.status}) : ${msg}`);
-  console.error("POST /api/public/orders FAILED", {
-    status: resp.status,
-    rawText,
-    data,
-    payloadSent: payload,
-  });
-  return;
-}
-
-      alert(`Erreur (${resp.status}) : ${msg}`);
-      console.error("POST /api/public/orders FAILED", {
-        status: resp.status,
-        rawText,
-        data,
-        payloadSent: payload,
+      resp = await fetch("/api/public/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
-      return;
-    }
 
-    setIsSubmitting(false);
-    alert("Commande envoyée ✅ Vous allez recevoir un email avec le PDF signé.");
-  } catch (e: any) {
-  setIsSubmitting(false);
-  alert(`Erreur réseau : ${e?.message || "inconnue"}`);
-  console.error("POST /api/public/orders NETWORK ERROR", e);
-}
-}
+      rawText = await resp.text();
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!resp.ok) {
+        const msg =
+          (data && (data.error || data.message)) ||
+          rawText ||
+          "Erreur inconnue (réponse vide).";
+
+        setIsSubmitting(false);
+        alert(`Erreur (${resp.status}) : ${msg}`);
+        console.error("POST /api/public/orders FAILED", {
+          status: resp.status,
+          rawText,
+          data,
+          payloadSent: payload,
+        });
+        return;
+      }
+
+      setIsSubmitting(false);
+      alert("Commande envoyée ✅ Vous allez recevoir un email avec le PDF signé.");
+    } catch (e: any) {
+      setIsSubmitting(false);
+      alert(`Erreur réseau : ${e?.message || "inconnue"}`);
+      console.error("POST /api/public/orders NETWORK ERROR", e);
+    }
+  }
 
 
   if (!okCode) {
@@ -497,7 +480,7 @@ export default function SkglPage() {
               <input className="w-full rounded-xl border border-black/15 px-4 py-3" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
 
-            <<div className="mt-3">
+            <div className="mt-3">
   <div className="relative">
     <input
       className="w-full rounded-xl border border-black/15 px-4 py-3"
