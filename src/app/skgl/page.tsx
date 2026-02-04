@@ -208,7 +208,9 @@ export default function SkglPage() {
 const closureOptions = useMemo(() => {
   const now = new Date();
 
-  // on part du mois courant, mais on SKIP mars (03)
+  // ✅ on exclut les clôtures passées : si la clôture (1er jour ouvré) est <= aujourd'hui, on ne la propose pas
+  const todayLocal = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
   const list: { key: string; label: string; closureISO: string }[] = [];
   let cursor = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -217,18 +219,22 @@ const closureOptions = useMemo(() => {
     const m0 = cursor.getMonth(); // 0..11
     const mm = m0 + 1;
 
-    // ✅ skip mars
+    // ✅ skip mars (op spéciale)
     if (mm !== 3) {
-      const closure = firstBusinessDayOfMonth(y, m0);
-      const key = monthKey(cursor); // YYYY-MM
-      const closureISO = `${closure.getFullYear()}-${pad2(closure.getMonth() + 1)}-${pad2(
-        closure.getDate()
-      )}`;
-      const label = `${key} — clôture le ${fmtFR(closure)}`;
-      list.push({ key, label, closureISO });
+      const closure = firstBusinessDayOfMonth(y, m0); // local
+      const closureDayLocal = new Date(closure.getFullYear(), closure.getMonth(), closure.getDate());
+
+      // ✅ on ne garde que les clôtures strictement futures
+      if (closureDayLocal > todayLocal) {
+        const key = monthKey(cursor); // YYYY-MM
+        const closureISO = `${closure.getFullYear()}-${pad2(closure.getMonth() + 1)}-${pad2(
+          closure.getDate()
+        )}`;
+        const label = `${key} — clôture le ${fmtFR(closure)}`;
+        list.push({ key, label, closureISO });
+      }
     }
 
-    // mois suivant
     cursor = new Date(y, m0 + 1, 1);
   }
 
@@ -755,11 +761,19 @@ packagingLabel: PACKAGING_LABEL,
               ) : null}
 
               <div className="mt-5 rounded-xl border border-black/10 bg-black/5 px-4 py-3 text-sm">
-                <div className="font-medium">Paiement</div>
-                <div className="text-black/70">
-                  Paiement à effectuer <span className="font-semibold">avant le 1er mars</span>, sinon la commande ne sera pas lancée.
-                </div>
-              </div>
+  <div className="font-medium">Paiement</div>
+  <div className="text-black/70">
+    Paiement à effectuer{" "}
+    <span className="font-semibold">
+      {kind === "TEST"
+        ? "avant le 1er mars"
+        : classicClosureISO
+        ? `avant le ${fmtFR(new Date(`${classicClosureISO}T00:00:00.000Z`))}`
+        : "avant la clôture sélectionnée"}
+    </span>
+    , sinon la commande ne sera pas lancée.
+  </div>
+</div>
 
               <label className="mt-5 flex items-center gap-3 text-sm">
                 <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />

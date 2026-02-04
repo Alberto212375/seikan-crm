@@ -63,6 +63,11 @@ function firstBusinessDayOfMonthISO(year: number, monthIndex0: number) {
 
 function allowedClassicClosuresISO(now = new Date()) {
   const list: string[] = [];
+
+  // ✅ aujourd'hui en UTC (00:00)
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+  // on parcourt à partir du mois courant
   let cursor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
   while (list.length < 2) {
@@ -72,7 +77,13 @@ function allowedClassicClosuresISO(now = new Date()) {
 
     // ✅ skip mars (03)
     if (mm !== 3) {
-      list.push(firstBusinessDayOfMonthISO(y, m0));
+      const closureISO = firstBusinessDayOfMonthISO(y, m0); // YYYY-MM-DD
+      const closureUTC = new Date(`${closureISO}T00:00:00.000Z`);
+
+      // ✅ uniquement les clôtures strictement futures
+      if (closureUTC > todayUTC) {
+        list.push(closureISO);
+      }
     }
 
     cursor = new Date(Date.UTC(y, m0 + 1, 1));
