@@ -22,8 +22,8 @@ export function middleware(req: NextRequest) {
   pathname.startsWith("/prospects") ||
   pathname.startsWith("/clients") ||
   pathname.startsWith("/devis") ||
-  pathname.startsWith("/depot-vente") ||   // ✅ AJOUT
-  pathname.startsWith("/commandes") ||     // ✅ AJOUT
+  pathname.startsWith("/depot-vente") ||   
+  pathname.startsWith("/commandes") ||     
   pathname.startsWith("/facturation") ||
   pathname.startsWith("/archives") ||
   pathname.startsWith("/settings");
@@ -51,8 +51,11 @@ export const config = {
     "/prospects/:path*",
     "/clients/:path*",
     "/devis/:path*",
+    "/depot-vente/:path*",  
+    "/commandes/:path*",    
     "/facturation/:path*",
     "/archives/:path*",
     "/settings/:path*",
   ],
 };
+
