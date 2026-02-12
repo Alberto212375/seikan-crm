@@ -17,6 +17,27 @@ function parseSeqFromNumber(numberStr: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+async function nextInvoiceNumberNoGaps(invYear: number) {
+  const prefix = `FAC-${invYear}-`;
+
+  const existing = await prisma.invoice.findMany({
+    where: { number: { startsWith: prefix } },
+    select: { number: true },
+  });
+
+  const used = new Set<number>();
+  for (const r of existing) {
+    const n = parseSeqFromNumber(r.number);
+    if (n > 0) used.add(n);
+  }
+
+  // ✅ plus petit entier manquant à partir de 1
+  let seq = 1;
+  while (used.has(seq)) seq++;
+
+  return `${prefix}${pad6(seq)}`;
+}
+
 function safeParse<T>(s: string | null | undefined): T | null {
   if (!s) return null;
   try {
@@ -123,19 +144,9 @@ export async function POST(req: Request) {
 
     if (!quote.clientId) return NextResponse.json({ error: "Devis sans clientId" }, { status: 400 });
 
-    // ✅ numérotation facture FAC-YYYY-000001
     const year = new Date().getFullYear();
-    const prefix = `FAC-${year}-`;
+const number = await nextInvoiceNumberNoGaps(year);
 
-    const lastThisYear = await prisma.invoice.findFirst({
-      where: { number: { startsWith: prefix } },
-      orderBy: { number: "desc" },
-      select: { number: true },
-    });
-
-    const lastYearSeq = lastThisYear?.number ? parseSeqFromNumber(lastThisYear.number) : 0;
-    const nextYearSeq = lastYearSeq + 1;
-    const number = `${prefix}${pad6(nextYearSeq)}`;
 
     // ✅ copie des lignes du devis
     const items = (quote.items ?? [])

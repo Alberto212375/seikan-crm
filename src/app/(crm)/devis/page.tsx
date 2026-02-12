@@ -611,6 +611,27 @@ async function saveSignature() {
   }
 }
 
+  // ✅ Supprimer définitivement un devis (et tout ce qui est lié côté API : factures/documents)
+  async function deleteQuote(q: QuoteRow) {
+    if (!confirm(`Supprimer définitivement le devis ${q.number} ?`)) return;
+
+    const r = await fetch(`/api/quotes/${encodeURIComponent(q.id)}`, { method: "DELETE" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      alert(j?.error ?? "Erreur suppression devis");
+      return;
+    }
+
+    // refresh liste devis
+    const rr = await fetch("/api/quotes", { cache: "no-store" });
+    const jj = await rr.json().catch(() => ({}));
+    setQuotes((jj.quotes ?? []) as QuoteRow[]);
+
+    // refresh surlignage "facturé"
+    const r2 = await fetch("/api/invoices/by-quote", { cache: "no-store" });
+    const j2 = await r2.json().catch(() => ({}));
+    setFacturedQuoteIds(new Set((j2?.quoteIds ?? []) as string[]));
+  }
 
   useEffect(() => {
     let alive = true;
@@ -930,6 +951,13 @@ const balanceDueStr = balanceDueDate ? fmtDayMonthShort(balanceDueDate) : "";
                             CSV
                           </a>
                         </div>
+                        <button
+  type="button"
+  className="rounded-xl border px-3 py-2 text-xs border-red-300 text-red-700 hover:bg-red-50"
+  onClick={() => deleteQuote(q)}
+>
+  Supprimer
+</button>
                       </td>
                     </tr>
                   );

@@ -153,7 +153,7 @@ function makeEmailHtml(args: {
 
     <p style="margin:0 0 12px 0">
       Votre commande est confirmée et signée (“Bon pour accord”).<br/>
-      Vous trouverez la commande signée (PDF) et la facture (PDF) en pièces jointes.
+      Vous trouverez la commande signée (PDF) en pièce jointe.
     </p>
 
     <p style="margin:0 0 14px 0">
@@ -183,6 +183,27 @@ function parseSeqFromNumber(numberStr: string): number {
   const seq = parts[2] ?? "";
   const n = parseInt(seq, 10);
   return Number.isFinite(n) ? n : 0;
+}
+
+async function nextInvoiceNumberNoGaps(invYear: number) {
+  const prefix = `FAC-${invYear}-`;
+
+  const existing = await prisma.invoice.findMany({
+    where: { number: { startsWith: prefix } },
+    select: { number: true },
+  });
+
+  const used = new Set<number>();
+  for (const r of existing) {
+    const n = parseSeqFromNumber(r.number);
+    if (n > 0) used.add(n);
+  }
+
+  // ✅ plus petit entier manquant à partir de 1
+  let seq = 1;
+  while (used.has(seq)) seq++;
+
+  return `${prefix}${pad6(seq)}`;
 }
 
 export async function POST(req: Request) {
@@ -444,17 +465,7 @@ const client = existingClient
 
     // 2) Numérotation Facture FAC-YYYY-000001 (comme /api/invoices)
     const invYear = new Date().getFullYear();
-    const prefix = `FAC-${invYear}-`;
-
-    const lastThisYear = await prisma.invoice.findFirst({
-      where: { number: { startsWith: prefix } },
-      orderBy: { number: "desc" },
-      select: { number: true },
-    });
-
-    const lastSeq = lastThisYear?.number ? parseSeqFromNumber(lastThisYear.number) : 0;
-    const nextInvSeq = lastSeq + 1;
-    const invoiceNumber = `${prefix}${pad6(nextInvSeq)}`;
+const invoiceNumber = await nextInvoiceNumberNoGaps(invYear);
 
     // 3) Créer Invoice + lignes (unitPrice en cents, cohérent avec ton PDF facture)
     const invoiceMeta = {
@@ -530,15 +541,6 @@ const client = existingClient
     }
     const orderPdfBuffer = Buffer.from(await orderPdfResp.arrayBuffer());
 
-    // --- PDF Facture ---
-    const invoicePdfUrl = `${origin}/api/exports/invoices/${invoice.id}/pdf`;
-    const invoicePdfResp = await fetch(invoicePdfUrl, { method: "GET" });
-    if (!invoicePdfResp.ok) {
-      const txt = await invoicePdfResp.text().catch(() => "");
-      console.error("INVOICE PDF EXPORT FAILED", { status: invoicePdfResp.status, txt });
-      return NextResponse.json({ error: `Commande + facture créées mais PDF facture impossible (${invoicePdfResp.status}).` }, { status: 500 });
-    }
-    const invoicePdfBuffer = Buffer.from(await invoicePdfResp.arrayBuffer());
 
     // --- mail ---
     const smtpFrom = process.env.SMTP_FROM || process.env.SMTP_USER || "seikan.gallery@gmail.com";
@@ -563,17 +565,12 @@ const client = existingClient
       subject,
       html,
       attachments: [
-        {
-          filename: `Commande_${order.number}.pdf`,
-          content: orderPdfBuffer,
-          contentType: "application/pdf",
-        },
-        {
-          filename: `Facture_${invoice.number}.pdf`,
-          content: invoicePdfBuffer,
-          contentType: "application/pdf",
-        },
-      ],
+  {
+    filename: `Commande_${order.number}.pdf`,
+    content: orderPdfBuffer,
+    contentType: "application/pdf",
+  },
+],
     });
 
     return NextResponse.json({

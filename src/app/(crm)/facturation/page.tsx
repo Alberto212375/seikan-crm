@@ -358,6 +358,23 @@ function FacturationInner() {
     }
   }
 
+    // ✅ Supprimer définitivement une facture (et ses documents côté API)
+  async function deleteInvoiceFromRow(invoiceId: string) {
+    if (!confirm("Supprimer définitivement cette facture ?")) return;
+
+    const r = await fetch(`/api/invoices/${invoiceId}`, { method: "DELETE" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      alert(j?.error ?? "Erreur suppression facture");
+      return;
+    }
+
+    await refreshIssuedList();
+
+    // si on avait cette facture ouverte, on ferme
+    if (openId === invoiceId) router.push("/facturation");
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 space-y-6">
       <div className="flex items-start justify-between gap-3">
@@ -441,6 +458,12 @@ function FacturationInner() {
                         <button className="rounded-xl border px-3 py-2 text-xs" onClick={() => archiveFromRow(r.id)}>
                           Archiver
                         </button>
+                        <button
+  className="rounded-xl border px-3 py-2 text-xs border-red-300 text-red-700 hover:bg-red-50"
+  onClick={() => deleteInvoiceFromRow(r.id)}
+>
+  Supprimer
+</button>
                       </div>
                     </td>
                   </tr>

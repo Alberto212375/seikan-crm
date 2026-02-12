@@ -261,3 +261,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: e?.message ?? "Erreur serveur" }, { status: 500 });
   }
 }
+
+export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+  try {
+    const id = params.id;
+
+    // supprimer docs liés (sinon ils restent en orphelins car SetNull)
+    await prisma.document.deleteMany({ where: { invoiceId: id } });
+
+    // supprime items (cascade) via invoice
+    await prisma.invoice.delete({ where: { id } });
+
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    console.error("DELETE /api/invoices/[id] ERROR", e);
+    return NextResponse.json({ error: e?.message ?? "Erreur serveur" }, { status: 500 });
+  }
+}
