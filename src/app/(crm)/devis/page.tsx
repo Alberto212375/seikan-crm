@@ -692,7 +692,7 @@ async function saveSignature() {
 
       <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-          <table className="w-full min-w-[1200px] text-[13px] md:text-[15px]">
+          <table className="w-full min-w-[1400px] text-[13px] md:text-[15px]">
             <thead className="bg-neutral-50 text-left">
   <tr className="text-neutral-800">
                 <th className="px-4 py-3 md:px-5 md:py-4 w-[160px]">N°</th>
@@ -861,8 +861,8 @@ const balanceDueStr = balanceDueDate ? fmtDayMonthShort(balanceDueDate) : "";
 </div>
                       </td>
 
-                      <td className="px-4 py-3 md:px-5 md:py-4">
-                        <div className="flex items-center justify-end gap-2">
+                      <td className="px-4 py-3 md:px-5 md:py-4 w-[220px] text-right">
+  <div className="flex items-center justify-end gap-2">
                                                     {isTouch && !isQuoteSigned(q.metaJson) && (
                             <button
                               type="button"
