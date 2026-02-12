@@ -39,25 +39,33 @@ function isoDateOnly(d: Date) {
 }
 
 // ✅ Renvoie les prochaines clôtures (1er/15) à venir, limitées à "count"
-function nextClosureKeys(count: number): string[] {
+function fmtDateFRLongFromIso(iso: string) {
+  const d = new Date(String(iso || "").trim() + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return fmtDateFR(iso);
+  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function toIsoDateOnly(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x.toISOString().slice(0, 10);
+}
+
+// ✅ EXACTEMENT comme dans Devis : prochaines clôtures = 1er du mois (12 prochains mois)
+function next12ClosingsFirstOfMonth(from = new Date()) {
+  const base = new Date(from);
+  base.setHours(0, 0, 0, 0);
+
+  // prochaine clôture = 1er du mois (mois courant si on est le 1er, sinon mois suivant)
+  let cur = new Date(base.getFullYear(), base.getMonth(), 1);
+  if (base.getTime() > cur.getTime()) cur = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+
   const out: string[] = [];
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-
-  // on démarre au mois courant et on avance jusqu'à avoir assez de clôtures
-  for (let i = 0; i < 14 && out.length < count; i++) {
-    const base = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    const d1 = new Date(base.getFullYear(), base.getMonth(), 1);
-    const d15 = new Date(base.getFullYear(), base.getMonth(), 15);
-
-    [d1, d15].forEach((d) => {
-      d.setHours(0, 0, 0, 0);
-      if (d.getTime() >= now.getTime()) out.push(isoDateOnly(d));
-    });
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(cur.getFullYear(), cur.getMonth() + i, 1);
+    out.push(toIsoDateOnly(d));
   }
-
-  // tri croissant + limite
-  return out.sort((a, b) => (a < b ? -1 : 1)).slice(0, count);
+  return out;
 }
 
 export default function CommandesPage() {
@@ -114,8 +122,8 @@ export default function CommandesPage() {
   // clés qui ont déjà des commandes (issues API)
   const existingKeys = new Set(data.closures.map((c) => c.key));
 
-  // ✅ uniquement les 2 prochaines clôtures (même si vides)
-  const futureKeys = nextClosureKeys(2);
+  // ✅ mêmes clôtures que Devis : 12 prochaines clôtures (1er du mois)
+const futureKeys = next12ClosingsFirstOfMonth(new Date());
 
   // merge: clôtures existantes + futures (sans doublons)
   const mergedKeys = Array.from(new Set([...data.closures.map((c) => c.key), ...futureKeys]));
@@ -124,9 +132,9 @@ export default function CommandesPage() {
   mergedKeys.sort((a, b) => (a < b ? 1 : -1));
 
   return mergedKeys.map((key) => ({
-    key,
-    label: `Clôture — ${fmtDateFR(key)}${existingKeys.has(key) ? "" : " (à venir)"}`,
-  }));
+  key,
+  label: `Clôture — ${fmtDateFRLongFromIso(key)}${existingKeys.has(key) ? "" : " (à venir)"}`,
+}));
 }, [data.closures]);
 
   return (
