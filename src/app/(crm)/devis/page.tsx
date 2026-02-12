@@ -650,7 +650,7 @@ async function saveSignature() {
 }, []);
 
     return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
+    <div className="mx-auto max-w-7xl px-4 py-8">
       <div className="mb-6 flex items-start justify-between gap-3">
         <div>
           <div className="text-3xl font-semibold">Devis</div>
@@ -692,19 +692,19 @@ async function saveSignature() {
 
       <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-          <table className="w-full min-w-[1400px] text-[13px] md:text-[15px]">
+          <table className="w-full table-auto text-[13px] md:text-[15px]">
             <thead className="bg-neutral-50 text-left">
   <tr className="text-neutral-800">
-                <th className="px-4 py-3 md:px-5 md:py-4 w-[160px]">N°</th>
-                <th className="px-4 py-3 md:px-5 md:py-4 w-[110px]">Date</th>
-                <th className="px-4 py-3 md:px-5 md:py-4 w-[80px]">Type</th>
-                <th className="px-4 py-3 md:px-5 md:py-4">Société</th>
-                <th className="px-4 py-3 md:px-5 md:py-4">Service</th>
-                <th className="px-4 py-3 md:px-5 md:py-4">Nom</th>
-                <th className="px-4 py-3 md:px-5 md:py-4">Prénom</th>
-                <th className="px-4 py-3 md:px-5 md:py-4 w-[220px]">Acompte</th>
-                <th className="px-4 py-3 md:px-5 md:py-4 w-[180px]">Restant (HT / TTC)</th>
-                <th className="px-4 py-3 md:px-5 md:py-4 w-[220px] text-right">Actions</th>
+                <th className="px-4 py-3 md:px-5 md:py-4 whitespace-nowrap">N°</th>
+<th className="px-4 py-3 md:px-5 md:py-4 whitespace-nowrap">Date</th>
+<th className="px-4 py-3 md:px-5 md:py-4 whitespace-nowrap">Type</th>
+<th className="px-4 py-3 md:px-5 md:py-4">Société</th>
+<th className="px-4 py-3 md:px-5 md:py-4">Service</th>
+<th className="px-4 py-3 md:px-5 md:py-4">Nom</th>
+<th className="px-4 py-3 md:px-5 md:py-4">Prénom</th>
+<th className="px-4 py-3 md:px-5 md:py-4">Acompte</th>
+<th className="px-4 py-3 md:px-5 md:py-4 whitespace-nowrap">Restant (HT / TTC)</th>
+<th className="px-4 py-3 md:px-5 md:py-4 text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
 
@@ -861,7 +861,7 @@ const balanceDueStr = balanceDueDate ? fmtDayMonthShort(balanceDueDate) : "";
 </div>
                       </td>
 
-                      <td className="px-4 py-3 md:px-5 md:py-4 w-[220px] text-right">
+                      <td className="px-4 py-3 md:px-5 md:py-4 text-right whitespace-nowrap">
   <div className="flex items-center justify-end gap-2">
                                                     {isTouch && !isQuoteSigned(q.metaJson) && (
                             <button
