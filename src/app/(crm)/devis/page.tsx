@@ -364,39 +364,36 @@ function fmtMonthYear(d: Date) {
   return d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
 }
 
-function buildClosuresNextYear(fromDate: Date) {
+function toIsoDateOnly(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x.toISOString().slice(0, 10);
+}
+
+function next12ClosingsFirstOfMonth(from = new Date()) {
+  const base = new Date(from);
+  base.setHours(0, 0, 0, 0);
+
+  // prochaine clôture = 1er du mois (mois courant si on est le 1er, sinon mois suivant)
+  let cur = new Date(base.getFullYear(), base.getMonth(), 1);
+  if (base.getTime() > cur.getTime()) cur = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+
   const out: Array<{ key: string; label: string; date: Date }> = [];
-  const start = new Date(fromDate);
-  start.setHours(0, 0, 0, 0);
-
-  for (let i = 0; i < 13; i++) {
-    const base = new Date(start.getFullYear(), start.getMonth() + i, 1);
-    const d1 = new Date(base.getFullYear(), base.getMonth(), 1);
-    const d15 = new Date(base.getFullYear(), base.getMonth(), 15);
-
-    out.push({ key: d1.toISOString().slice(0, 10), label: `Clôture — ${fmtDateFRLong(d1)}`, date: d1 });
-    out.push({ key: d15.toISOString().slice(0, 10), label: `Clôture — ${fmtDateFRLong(d15)}`, date: d15 });
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(cur.getFullYear(), cur.getMonth() + i, 1);
+    out.push({ key: toIsoDateOnly(d), label: `Clôture — ${fmtDateFRLong(d)}`, date: d });
   }
-
-  const filtered = out
-    .filter((x) => {
-      const t = new Date(x.date);
-      t.setHours(0, 0, 0, 0);
-      return t.getTime() >= start.getTime();
-    })
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  return filtered.slice(0, 26);
+  return out;
 }
 
 function computeDeliveryWindowFromClosure(closure: Date) {
-  const from = addBusinessDays(closure, 7);
-  const to = addBusinessDays(closure, 10);
+  const start = addDays(closure, 12);
+  const end = addDays(closure, 15);
 
-  if (from.getFullYear() === to.getFullYear() && from.getMonth() === to.getMonth()) {
-    return `Livraison prévue entre le ${fmtDay(from)} et le ${fmtDay(to)} ${fmtMonthYear(to)}`;
-  }
-  return `Livraison prévue entre le ${fmtDayMonth(from)} et le ${fmtDayMonth(to)} ${fmtMonthYear(to)}`;
+  const s = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" }).format(start);
+  const e = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" }).format(end);
+
+  return `Livraison entre le ${s} et le ${e}`;
 }
 
 /* -------------------- Liste devis -------------------- */
@@ -441,6 +438,8 @@ function QuoteList({
   const [signerRole, setSignerRole] = useState("Gérant");
   const [bonPourAccord, setBonPourAccord] = useState(false);
   const [signSaving, setSignSaving] = useState(false);
+  
+
 
     // ✅ Empêche la page de scroller pendant la signature (iPad/Safari)
   useEffect(() => {
@@ -1104,7 +1103,7 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
   });
 
   // Clôture + fenêtre livraison
-  const closures = useMemo(() => buildClosuresNextYear(new Date()), []);
+  const closures = useMemo(() => next12ClosingsFirstOfMonth(new Date()), []);
   const [closureKey, setClosureKey] = useState<string>(closures[0]?.key ?? "");
   const closureObj = useMemo(() => closures.find((c) => c.key === closureKey) ?? null, [closures, closureKey]);
   const deliveryWindowLabel = useMemo(() => {
@@ -1787,7 +1786,7 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
           <div className="text-sm">
             <div className="text-neutral-600">Livraison estimée</div>
             <div className="mt-1 rounded-xl border px-3 py-2 text-sm bg-neutral-50">{deliveryWindowLabel || "—"}</div>
-            <div className="mt-1 text-xs text-neutral-500">Estimation : 7 à 10 jours ouvrés après clôture.</div>
+            <div className="mt-1 text-xs text-neutral-500">Estimation : J+12 à J+15 après la clôture.</div>
           </div>
         </div>
       </div>

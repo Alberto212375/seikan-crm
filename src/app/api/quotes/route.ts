@@ -129,6 +129,37 @@ function daysDiffCeil(from: Date, to: Date) {
   return Math.max(1, Math.ceil(ms / day) + 1); // inclusif
 }
 
+function addDays(date: Date, days: number) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function nextClosingFirstOfMonth(now: Date) {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+
+  let closing = new Date(d.getFullYear(), d.getMonth(), 1);
+  if (d.getTime() > closing.getTime()) {
+    closing = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  }
+  return closing;
+}
+
+function formatFrDayMonth(date: Date) {
+  return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" }).format(date);
+}
+
+function formatDeliveryWindowLabelFromClosing(closing: Date) {
+  const start = addDays(closing, 12);
+  const end = addDays(closing, 15);
+
+  const s = formatFrDayMonth(start);
+  const e = formatFrDayMonth(end);
+
+  return `Livraison entre le ${s} et le ${e}`;
+}
+
 // ✅ Liste des devis (page /devis)
 export async function GET() {
   try {
@@ -340,10 +371,19 @@ const totalHT = afterDiscountHT + francoCost;
 
     const issueDate = new Date();
 
-    // ✅ Validité = jusqu’à la clôture choisie
-    const closing = parseIsoDateOnly(String(posters.closingDate ?? "")) ?? issueDate;
-    const validUntil = closing;
-    const validDays = daysDiffCeil(issueDate, validUntil);
+    // ✅ Clôture (obligatoire fonctionnellement) : si le front n'envoie rien, on prend la prochaine clôture (1er du mois)
+const closing =
+  parseIsoDateOnly(String(posters.closingDate ?? "")) ??
+  nextClosingFirstOfMonth(issueDate);
+
+// ✅ Validité = jusqu’à la clôture choisie
+const validUntil = closing;
+const validDays = daysDiffCeil(issueDate, validUntil);
+
+// ✅ Livraison = entre J+12 et J+15 après la clôture (si le front ne fournit pas le libellé)
+const deliveryWindowLabel =
+  String(posters.deliveryWindowLabel ?? "").trim() ||
+  formatDeliveryWindowLabelFromClosing(closing);
 
     // ✅ Arrhes : par défaut non versées, montant proposé = depositHT (0 si paiement comptant)
     const depositPaid = false;
@@ -364,8 +404,8 @@ const totalHT = afterDiscountHT + francoCost;
   discountAppliedPct: discountPct,
   francoThreshold,
   francoCost,
-  closingDate: String(posters.closingDate ?? ""),
-  deliveryWindowLabel: String(posters.deliveryWindowLabel ?? ""),
+  closingDate: closing.toISOString().slice(0, 10),
+deliveryWindowLabel,
 
   paperWeight,
   packaging: (posters.packaging === "tube" ? "tube" : "plastic_carton"),
