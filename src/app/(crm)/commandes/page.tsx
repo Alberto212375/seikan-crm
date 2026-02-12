@@ -70,29 +70,35 @@ export default function CommandesPage() {
   // détail: itemKey => open/closed
   const [openDetails, setOpenDetails] = useState<Record<string, boolean>>({});
 
+    const [deletingId, setDeletingId] = useState<string>("");
+
+  async function refreshOrders(isAlive?: () => boolean) {
+  const r = await fetch("/api/orders", { cache: "no-store" });
+  const j = (await r.json()) as OrdersApi;
+
+  if (isAlive && !isAlive()) return;
+
+  setData({ closures: Array.isArray(j?.closures) ? j.closures : [] });
+
+  const lastWithOrdersKey = (j?.closures?.[0]?.key ?? "") as string;
+  setSelectedClosure((prev) => prev || lastWithOrdersKey);
+}
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        setLoading(true);
-        const r = await fetch("/api/orders", { cache: "no-store" });
-        const j = (await r.json()) as OrdersApi;
-        if (!alive) return;
+  let alive = true;
 
-       setData({ closures: Array.isArray(j?.closures) ? j.closures : [] });
+  (async () => {
+    try {
+      setLoading(true);
+      await refreshOrders(() => alive);
+    } finally {
+      if (alive) setLoading(false);
+    }
+  })();
 
-// ✅ Par défaut : dernière clôture qui a des commandes (API triée: plus récent d'abord)
-const lastWithOrdersKey = (j?.closures?.[0]?.key ?? "") as string;
-setSelectedClosure((prev) => prev || lastWithOrdersKey);
-
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
+  return () => {
+    alive = false;
+  };
+}, []);
 
   const currentClosureObj = useMemo(() => {
     return data.closures.find((c) => c.key === selectedClosure) ?? null;
@@ -249,24 +255,54 @@ setSelectedClosure((prev) => prev || lastWithOrdersKey);
                             <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
                               <table className="w-full min-w-[700px] text-sm">
                                 <thead className="text-left">
-                                  <tr className="text-neutral-600">
-                                    <th className="py-2 pr-3">Client</th>
-                                    <th className="py-2 pr-3 w-[120px] text-right">Qté</th>
-                                  </tr>
-                                </thead>
+  <tr className="text-neutral-600">
+    <th className="py-2 pr-3">Client</th>
+    <th className="py-2 pr-3 w-[120px] text-right">Qté</th>
+    <th className="py-2 pr-3 w-[140px] text-right">Actions</th>
+  </tr>
+</thead>
                                 <tbody>
                                   {it.clients.length === 0 ? (
                                     <tr>
-                                      <td colSpan={2} className="py-3 text-neutral-500">
-                                        Aucun détail client.
-                                      </td>
+                                      <td colSpan={3} className="py-3 text-neutral-500">
+  Aucun détail client.
+</td>
                                     </tr>
                                   ) : (
                                     it.clients.map((c) => (
                                       <tr key={c.clientId} className="border-t border-neutral-200">
-                                        <td className="py-2 pr-3">{c.clientName}</td>
-                                        <td className="py-2 pr-3 text-right tabular-nums font-medium">{c.qty}</td>
-                                      </tr>
+  <td className="py-2 pr-3">{c.clientName}</td>
+  <td className="py-2 pr-3 text-right tabular-nums font-medium">{c.qty}</td>
+
+  <td className="py-2 pr-3 text-right">
+    <button
+      type="button"
+      className="rounded-xl bg-red-600 px-3 py-2 text-xs text-white disabled:opacity-60"
+      disabled={deletingId === c.clientId}
+      onClick={async () => {
+        if (deletingId) return;
+        if (!confirm("Supprimer définitivement cette commande ?\n(Cela supprimera aussi la facture et le devis liés.)")) return;
+
+        setDeletingId(c.clientId);
+        try {
+          const res = await fetch(`/api/orders/${encodeURIComponent(c.clientId)}`, { method: "DELETE" });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            alert(j?.error || "Erreur suppression");
+            return;
+          }
+
+          // refresh UI
+          await refreshOrders();
+        } finally {
+          setDeletingId("");
+        }
+      }}
+    >
+      {deletingId === c.clientId ? "Suppression…" : "Supprimer"}
+    </button>
+  </td>
+</tr>
                                     ))
                                   )}
                                 </tbody>
