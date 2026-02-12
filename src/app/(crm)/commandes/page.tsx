@@ -51,7 +51,7 @@ function toIsoDateOnly(d: Date) {
   return x.toISOString().slice(0, 10);
 }
 
-// ✅ EXACTEMENT comme dans Devis : prochaines clôtures = 1er du mois (12 prochains mois)
+// ✅ EXACTEMENT comme dans la rédaction de devis : uniquement les 1er du mois, sur 12 mois
 function next12ClosingsFirstOfMonth(from = new Date()) {
   const base = new Date(from);
   base.setHours(0, 0, 0, 0);
@@ -60,13 +60,15 @@ function next12ClosingsFirstOfMonth(from = new Date()) {
   let cur = new Date(base.getFullYear(), base.getMonth(), 1);
   if (base.getTime() > cur.getTime()) cur = new Date(base.getFullYear(), base.getMonth() + 1, 1);
 
-  const out: string[] = [];
+  const out: Array<{ key: string; label: string }> = [];
   for (let i = 0; i < 12; i++) {
     const d = new Date(cur.getFullYear(), cur.getMonth() + i, 1);
-    out.push(toIsoDateOnly(d));
+    const key = toIsoDateOnly(d);
+    out.push({ key, label: `Clôture — ${fmtDateFRLongFromIso(key)}` });
   }
   return out;
 }
+
 
 export default function CommandesPage() {
   const [loading, setLoading] = useState(true);
@@ -88,8 +90,20 @@ export default function CommandesPage() {
 
   setData({ closures: Array.isArray(j?.closures) ? j.closures : [] });
 
+    const allowed = new Set(next12ClosingsFirstOfMonth(new Date()).map((x) => x.key));
   const lastWithOrdersKey = (j?.closures?.[0]?.key ?? "") as string;
-  setSelectedClosure((prev) => prev || lastWithOrdersKey);
+
+  setSelectedClosure((prev) => {
+    // si déjà choisi et valide → on garde
+    if (prev && allowed.has(prev)) return prev;
+
+    // sinon, si la dernière clôture avec commandes est valide → on la prend
+    if (lastWithOrdersKey && allowed.has(lastWithOrdersKey)) return lastWithOrdersKey;
+
+    // sinon → on prend la première clôture de la liste (comme dans devis)
+    return next12ClosingsFirstOfMonth(new Date())[0]?.key ?? "";
+  });
+
 }
   useEffect(() => {
   let alive = true;
@@ -118,24 +132,10 @@ export default function CommandesPage() {
     return items.filter((i) => i.format === formatFilter);
   }, [currentClosureObj, formatFilter]);
 
-  const closureOptions = useMemo(() => {
-  // clés qui ont déjà des commandes (issues API)
-  const existingKeys = new Set(data.closures.map((c) => c.key));
-
-  // ✅ mêmes clôtures que Devis : 12 prochaines clôtures (1er du mois)
-const futureKeys = next12ClosingsFirstOfMonth(new Date());
-
-  // merge: clôtures existantes + futures (sans doublons)
-  const mergedKeys = Array.from(new Set([...data.closures.map((c) => c.key), ...futureKeys]));
-
-  // tri décroissant (plus récent en haut)
-  mergedKeys.sort((a, b) => (a < b ? 1 : -1));
-
-  return mergedKeys.map((key) => ({
-  key,
-  label: `Clôture — ${fmtDateFRLongFromIso(key)}${existingKeys.has(key) ? "" : " (à venir)"}`,
-}));
-}, [data.closures]);
+    const closureOptions = useMemo(() => {
+    // ✅ UNIQUEMENT les clôtures "devis" (1er du mois, 12 mois)
+    return next12ClosingsFirstOfMonth(new Date());
+  }, []);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
