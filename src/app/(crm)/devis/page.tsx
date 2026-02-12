@@ -336,22 +336,6 @@ function calcUnitPriceEuros(format: PosterFormat, totalUnitsInFormat: number, pa
   return 0;
 }
 
-function calcUnitPriceEurosFirstOrderAware(
-  format: PosterFormat,
-  totalUnitsInFormat: number,
-  paper: PaperWeight,
-  firstOrder: boolean
-) {
-  // ✅ Si "Première commande" = ON :
-  // 135g => 10€ ; 250g => 12€ ; quelle que soit la quantité
-  // ⚠️ On ne touche pas A2 (reste sur sa logique spéciale)
-  if (firstOrder && format !== "A2") {
-    return paper === "135g" ? 10 : 12;
-  }
-
-  return calcUnitPriceEuros(format, totalUnitsInFormat, paper);
-}
-
 function clampInt(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -1096,13 +1080,15 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
 
   // Posters UI state
   const [selectedFormat, setSelectedFormat] = useState<PosterFormat>("30x40");
-  const [firstOrder, setFirstOrder] = useState<boolean>(false);
+
+  // ✅ NEW : type de commande (remplace "Première commande")
+  const [orderType, setOrderType] = useState<"test" | "classic">("test"); // par défaut : commande test
+
   const [vatExempt, setVatExempt] = useState<boolean>(true);
 
-    // ✅ Impression / Colisage
-  const [paperWeight, setPaperWeight] = useState<PaperWeight>("250g"); // 250g = règle actuelle
-  const [packaging, setPackaging] = useState<"tube" | "vrac">("vrac"); // vrac par défaut
-
+  // ✅ Impression / Colisage
+  const [paperWeight, setPaperWeight] = useState<PaperWeight>("250g"); // inchangé
+  const [packaging, setPackaging] = useState<"plastic_carton" | "tube">("plastic_carton"); // par défaut : plastique+carton, sans surcoût
 
   // ✅ Paiement différé (acompte 50% / solde 50%) — par défaut NON
   const [deferredPayment, setDeferredPayment] = useState<boolean>(false);
@@ -1130,6 +1116,17 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
     if (!closureObj) return "—";
     return `Jusqu’au ${fmtDateFRLong(closureObj.date)}`;
   }, [closureObj]);
+
+  // ✅ Échéances affichées (homogènes avec Facture)
+  const payBeforeCreateStr = useMemo(() => {
+    const d = closureObj?.date ? addDays(closureObj.date, -2) : null;
+    return d ? fmtDayMonthShort(d) : "";
+  }, [closureObj]);
+
+  const balanceDueCreateStr = useMemo(() => {
+    const d = addDays(new Date(), 30);
+    return fmtDayMonthShort(d);
+  }, []);
 
   // Remise commerciale
   const [discountDraftPct, setDiscountDraftPct] = useState<string>("0");
@@ -1206,26 +1203,14 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
     setQtyByRef((prev) => {
       const next: Record<string, number> = { ...prev };
 
-      const minQty = firstOrder ? 1 : 2;
+      // ✅ NEW : min = 1 partout (commande test OU classique)
+      const minQty = 1;
 
-if (firstOrder) {
-  // Première commande = ON => 1
-  next[ref.ref] = 1;
-  return next;
-}
+      // 1ère sélection => 1
+      next[ref.ref] = minQty;
 
-// Première commande = OFF => min 2 par article
-if (countBefore === 0) {
-  // 1er poster => 2
-  next[ref.ref] = minQty;
-  return next;
-}
-
-// 2e poster (ou +) => 2
-next[ref.ref] = minQty;
-
-      // bump le 1er de 1 -> 2 UNE SEULE FOIS
-      if (firstSelected) {
+      // ✅ on conserve la logique "bump 1 seule fois" uniquement en commande classique
+      if (orderType === "classic" && countBefore >= 1 && firstSelected) {
         const curFirst = next[firstSelected] ?? 0;
         if (curFirst === 1) next[firstSelected] = 2;
       }
@@ -1240,13 +1225,13 @@ next[ref.ref] = minQty;
   }
 
   function setQty(refCode: string, qty: number) {
-  const minQty = firstOrder ? 1 : 2;
+    const minQty = 1;
 
-  const q0 = Number.isFinite(qty) ? Math.trunc(qty) : 0;
-  const q = clampInt(q0, minQty, 9999);
+    const q0 = Number.isFinite(qty) ? Math.trunc(qty) : 0;
+    const q = clampInt(q0, minQty, 9999);
 
-  setQtyByRef((prev) => ({ ...prev, [refCode]: q }));
-}
+    setQtyByRef((prev) => ({ ...prev, [refCode]: q }));
+  }
 
   const selectionsByFormat = useMemo(() => {
     const map: Record<PosterFormat, Array<{ ref: PosterRef; qty: number }>> = {
@@ -1283,9 +1268,21 @@ next[ref.ref] = minQty;
       const totalUnitsInFormat = formatTotals[fmt];
       if (totalUnitsInFormat <= 0) return;
 
-            const packagingExtra = packaging === "tube" ? 1.5 : 0;
-const unit =
-  calcUnitPriceEurosFirstOrderAware(fmt, totalUnitsInFormat, paperWeight, firstOrder) + packagingExtra;
+      // ✅ NEW : prix 30×40 dépend du type de commande
+      let unit = 0;
+
+      if (fmt === "30x40") {
+        const n = totalUnitsInFormat;
+        if (orderType === "test") {
+          unit = 11; // 0→50 (et même au-delà, on garde 11)
+        } else {
+          // classique : 10–19 =>12 / 20–39 =>11 / 40+ =>10
+          unit = n >= 40 ? 10 : n >= 20 ? 11 : 12;
+        }
+      } else {
+        // A3/A2 : on ne change rien
+        unit = calcUnitPriceEuros(fmt, totalUnitsInFormat, paperWeight);
+      }
 
       for (const s of selectionsByFormat[fmt]) {
         const q = Math.max(1, qtyEffective[s.ref.ref] ?? s.qty ?? 1);
@@ -1306,10 +1303,13 @@ const unit =
     const discountAmount = discountPct > 0 ? Math.round((postersHTCents * discountPct) / 100) : 0;
     const afterDiscountHT = postersHTCents - discountAmount;
 
-    // ✅ Commande d’essai / première commande : AUCUN frais de port
-const francoThreshold = firstOrder ? 0 : 25000;
-const francoCost = firstOrder ? 0 : (afterDiscountHT >= francoThreshold ? 0 : 2000);
-const totalHT = afterDiscountHT + francoCost;
+    // ✅ NEW : commande test => pas de frais de port
+    const isTest = orderType === "test";
+
+    const francoThreshold = isTest ? 0 : 18000;
+    const francoCost = isTest ? 0 : afterDiscountHT >= francoThreshold ? 0 : 2000;
+
+    const totalHT = afterDiscountHT + francoCost;
 
     const vatRate = vatExempt ? 0 : 0.2;
     const totalTTC = vatRate > 0 ? Math.round(totalHT * (1 + vatRate)) : totalHT;
@@ -1319,7 +1319,7 @@ const totalHT = afterDiscountHT + francoCost;
     const depositHT = Math.round((totalHT * depositPct) / 100);
     const balanceHT = totalHT - depositHT;
 
-        // ✅ Nouvelle règle :
+    // ✅ Nouvelle règle :
     // - minimum 1 poster (pas de minimum 10 par format)
     // - SAUF si la commande est "A2 uniquement" => minimum 10 posters au total en A2
     const formatErrors: Record<PosterFormat, string | null> = { "30x40": null, A3: null, A2: null };
@@ -1355,7 +1355,7 @@ const totalHT = afterDiscountHT + francoCost;
       hasMinError,
       qtyEffective,
     };
-    }, [selectionsByFormat, firstOrder, discountAppliedPct, vatExempt, qtyByRef, deferredPayment, paperWeight, packaging]);
+  }, [selectionsByFormat, orderType, discountAppliedPct, vatExempt, qtyByRef, deferredPayment, paperWeight, packaging, selectionOrderByFmt]);
 
   async function createQuote() {
     if (!client) {
@@ -1396,115 +1396,97 @@ const totalHT = afterDiscountHT + francoCost;
       return;
     }
 
-        if (computed.hasMinError) {
+    if (computed.hasMinError) {
       alert("Commande bloquée : minimum de 10 posters requis si la commande est en A2 uniquement.");
       return;
     }
 
     setCreating(true);
 
-    const displayName = snapIsPro ? comp : [ln, fn].filter(Boolean).join(" — ") || "Client";
+    try {
+      const displayName = snapIsPro ? comp : [ln, fn].filter(Boolean).join(" — ") || "Client";
 
-    const payload = {
-      clientId: client.id,
-      clientSnapshot: {
-        name: displayName,
-        service: snapIsPro ? String(snapService || "") : "",
-        email: client.email || "",
-        phone: client.telephone || "",
-        address: joinAddress(bill.street, bill.postalCode, bill.city),
-      },
-
-      validDays: 1,
-
-            posters: {
-  firstOrder,
-  vatExempt,
-  deferredPayment,
-  closingDate: closureObj.key,
-  deliveryWindowLabel,
-  discountAppliedPct,
-  paperWeight,
-  packaging,
-
-  // ✅ NEW : pour la ligne séparée dans le PDF
-  tubeCartonEtiquette: packaging === "tube",
-  tubeCartonEtiquetteExtraEuros: packaging === "tube" ? 1.5 : 0,
-
-  selectionOrderByFmt,
-  selections: computed.outLines.map((l) => ({
-    format: l.format,
-    ref: l.ref,
-    name: l.name,
-    qty: l.qty,
-
-    // ✅ NEW : on force le grammage (pour l'affichage PDF)
-    grammage: paperWeight,
-  })),
-},
-
-      metaJson: JSON.stringify({
-        mode: "POSTERS",
-        party: {
-          isProfessional: snapIsPro,
-          lastName: ln,
-          firstName: fn,
-          societe: snapIsPro ? comp : "",
-          service: snapIsPro ? String(snapService || "").trim() : "",
-          siret: snapIsPro ? String(snapSiret || "").trim() : "",
+      const payload = {
+        clientId: client.id,
+        clientSnapshot: {
+          name: displayName,
+          service: snapIsPro ? String(snapService || "") : "",
+          email: client.email || "",
+          phone: client.telephone || "",
+          address: joinAddress(bill.street, bill.postalCode, bill.city),
         },
-        billingAddress: { ...bill },
-        delivery: {
-          address: deliveryWindowLabel,
+
+        validDays: 1,
+
+        // ✅ posters payload = DIRECTEMENT l'objet PostersPayload attendu par /api/quotes
+        posters: {
+          orderType, // "test" | "classic"
+          vatExempt,
+          deferredPayment,
+          closingDate: closureObj.key,
+          deliveryWindowLabel,
+          discountAppliedPct,
+          paperWeight,
+          packaging,
+          selectionOrderByFmt,
+          selections: computed.outLines.map((l) => ({
+            format: l.format,
+            ref: l.ref,
+            name: l.name,
+            qty: l.qty,
+            grammage: paperWeight,
+          })),
         },
-                posters: {
-  firstOrder,
-  vatExempt,
-  deferredPayment,
-  closingDate: closureObj.key,
-  deliveryWindowLabel,
-  discountAppliedPct,
-  paperWeight,
-  packaging,
 
-  // ✅ NEW
-  tubeCartonEtiquette: packaging === "tube",
-  tubeCartonEtiquetteExtraEuros: packaging === "tube" ? 1.5 : 0,
-},
-      }),
-    };
+        // ✅ metaJson = sibling de posters (pas dedans)
+        metaJson: JSON.stringify({
+          mode: "POSTERS",
+          party: {
+            isProfessional: snapIsPro,
+            lastName: ln,
+            firstName: fn,
+            societe: snapIsPro ? comp : "",
+            service: snapIsPro ? String(snapService || "").trim() : "",
+            siret: snapIsPro ? String(snapSiret || "").trim() : "",
+          },
+          billingAddress: { ...bill },
+          delivery: { address: deliveryWindowLabel },
 
-    const r = await fetch("/api/quotes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+          posters: {
+            orderType,
+            vatExempt,
+            deferredPayment,
+            closingDate: closureObj.key,
+            deliveryWindowLabel,
+            discountAppliedPct,
+            paperWeight,
+            packaging,
+          },
+        }),
+      };
 
-    if (!r.ok) {
+      const r = await fetch("/api/quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
       const j = await r.json().catch(() => ({}));
-      alert(j?.error ?? "Erreur création devis");
+      if (!r.ok) {
+        alert(j?.error ?? "Erreur création devis");
+        return;
+      }
+
+      const createdNumber = String(j?.quoteNumber ?? j?.number ?? j?.quote?.number ?? "");
+      const createdId = String(j?.quoteId ?? j?.id ?? j?.quote?.id ?? "");
+
+      router.replace(
+        `/devis?created=${encodeURIComponent(createdNumber)}&createdId=${encodeURIComponent(createdId)}`
+      );
+    } finally {
       setCreating(false);
-      return;
     }
-
-    const j = await r.json();
-    const q = j.quote;
-
-    const createdNumber = encodeURIComponent(String(q.number ?? ""));
-    const createdId = encodeURIComponent(String(q.id ?? ""));
-    router.replace(`/devis?created=${createdNumber}&createdId=${createdId}`);
-
-    setCreating(false);
   }
-
-  // ✅ Échéances affichées (homogènes avec Facture)
-// - PayBefore = clôture - 2 jours
-// - BalanceDue = (signature si dispo => pas ici) sinon date émission (today) + 30
-const payBeforeCreateDate = closureObj?.date ? addDays(closureObj.date, -2) : null;
-const payBeforeCreateStr = payBeforeCreateDate ? fmtDayMonthShort(payBeforeCreateDate) : "";
-
-const balanceDueCreateDate = addDays(new Date(), 30);
-const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
@@ -1644,13 +1626,20 @@ const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={firstOrder} onChange={(e) => setFirstOrder(e.target.checked)} />
-            <span className="font-medium">Première commande</span>
+          <label className="text-sm">
+            <span className="text-neutral-600">Commande</span>
+            <select
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={orderType}
+              onChange={(e) => setOrderType(e.target.value as "test" | "classic")}
+            >
+              <option value="test">Commande test</option>
+              <option value="classic">Commande classique</option>
+            </select>
           </label>
         </div>
 
-                {/* ✅ Choix impression / Colisage */}
+        {/* ✅ Choix impression / Colisage */}
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <label className="text-sm">
             <span className="text-neutral-600">Choix d’impression</span>
@@ -1667,28 +1656,17 @@ const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
           <label className="text-sm">
             <span className="text-neutral-600">Colisage</span>
             <select
-  className="mt-1 w-full rounded-xl border px-3 py-2"
-  value={packaging}
-  onChange={(e) => setPackaging(e.target.value as "tube" | "vrac")}
->
-  <option value="vrac">Vrac en carton</option>
-  <option value="tube">Tube carton + étiquette</option>
-</select>
-            <div className="mt-1 text-xs text-neutral-500">
-              {packaging === "tube" ? "+1,50 € / poster" : "Aucun surcoût"}
-            </div>
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={packaging}
+              onChange={(e) => setPackaging(e.target.value as "plastic_carton" | "tube")}
+            >
+              <option value="plastic_carton">Plastique transparent et carton rigide</option>
+              <option value="tube">Tube</option>
+            </select>
+            <div className="mt-1 text-xs text-neutral-500">Aucun surcoût</div>
           </label>
 
-          <label className="text-sm flex items-end">
-            <span className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 w-full">
-              <input
-                type="checkbox"
-                checked={packaging === "tube"}
-                onChange={(e) => setPackaging(e.target.checked ? "tube" : "vrac")}
-              />
-              <span className="text-neutral-800 font-medium">Tube</span>
-            </span>
-          </label>
+          <div className="hidden md:block" />
         </div>
 
         {/* formats */}
@@ -1723,71 +1701,59 @@ const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
                   </label>
 
                   <div className="flex items-center gap-2">
-  <span className="text-xs text-neutral-500">Qté</span>
+                    <span className="text-xs text-neutral-500">Qté</span>
 
-  {/* - */}
-  <button
-    type="button"
-    className="h-9 w-9 rounded-lg border text-sm disabled:opacity-40"
-    disabled={!checked}
-    onClick={() => {
-      const minQty = firstOrder ? 1 : 2;
-      const cur = checked ? displayQty : 0;
-      setQty(r.ref, Math.max(minQty, (cur || minQty) - 1));
-    }}
-    aria-label="Diminuer la quantité"
-    title="Diminuer"
-  >
-    −
-  </button>
+                    <button
+                      type="button"
+                      className="h-9 w-9 rounded-lg border text-sm disabled:opacity-40"
+                      disabled={!checked}
+                      onClick={() => {
+                        const minQty = 1;
+                        const cur = checked ? displayQty : 0;
+                        setQty(r.ref, Math.max(minQty, (cur || minQty) - 1));
+                      }}
+                      aria-label="Diminuer la quantité"
+                      title="Diminuer"
+                    >
+                      −
+                    </button>
 
-  {/* input iPad-friendly */}
-  <input
-    className="h-9 w-[90px] rounded-lg border px-2 text-sm tabular-nums text-center"
-    type="text"
-    inputMode="numeric"
-    pattern="[0-9]*"
-    value={checked ? String(displayQty) : ""}
-    disabled={!checked}
-    onChange={(e) => {
-      // garde uniquement les chiffres (iPad)
-      const raw = (e.target.value || "").replace(/[^\d]/g, "");
-      const n = raw ? parseInt(raw, 10) : 0;
+                    <input
+                      className="h-9 w-[90px] rounded-lg border px-2 text-sm tabular-nums text-center"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={checked ? String(displayQty) : ""}
+                      disabled={!checked}
+                      onChange={(e) => {
+                        const raw = (e.target.value || "").replace(/[^\d]/g, "");
+                        const n = raw ? parseInt(raw, 10) : 0;
 
-      // règle : si première commande OFF -> min 2
-      if (!firstOrder) {
-        if (n <= 1) return setQty(r.ref, 2); // tape 1 => revient à 2
-        return setQty(r.ref, clampInt(n, 2, 9999));
-      }
+                        if (n <= 0) return setQty(r.ref, 1);
+                        setQty(r.ref, clampInt(n, 1, 9999));
+                      }}
+                      onBlur={() => {
+                        const minQty = 1;
+                        const cur = checked ? displayQty : 0;
+                        setQty(r.ref, Math.max(minQty, cur || minQty));
+                      }}
+                    />
 
-      // première commande ON -> min 1
-      if (n <= 0) return setQty(r.ref, 1);
-      setQty(r.ref, clampInt(n, 1, 9999));
-    }}
-    onBlur={() => {
-      // sécurité : si l’input a “glissé” => on recale au min
-      const minQty = firstOrder ? 1 : 2;
-      const cur = checked ? displayQty : 0;
-      setQty(r.ref, Math.max(minQty, cur || minQty));
-    }}
-  />
-
-  {/* + */}
-  <button
-    type="button"
-    className="h-9 w-9 rounded-lg border text-sm disabled:opacity-40"
-    disabled={!checked}
-    onClick={() => {
-      const minQty = firstOrder ? 1 : 2;
-      const cur = checked ? displayQty : 0;
-      setQty(r.ref, (cur || minQty) + 1);
-    }}
-    aria-label="Augmenter la quantité"
-    title="Augmenter"
-  >
-    +
-  </button>
-</div>
+                    <button
+                      type="button"
+                      className="h-9 w-9 rounded-lg border text-sm disabled:opacity-40"
+                      disabled={!checked}
+                      onClick={() => {
+                        const minQty = 1;
+                        const cur = checked ? displayQty : 0;
+                        setQty(r.ref, (cur || minQty) + 1);
+                      }}
+                      aria-label="Augmenter la quantité"
+                      title="Augmenter"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -1903,21 +1869,21 @@ const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
             <div className="text-neutral-700">Total HT</div>
             <div className="mt-1 text-lg font-semibold tabular-nums">{centsToEurosStr(computed.totalHT)} €</div>
             <div className="mt-1 text-xs text-neutral-500">
-  Franco :{" "}
-  {firstOrder ? (
-    <span className="font-medium">offert (commande d’essai)</span>
-  ) : computed.francoCost === 0 ? (
-    <>
-      <span className="font-medium">offert</span> — seuil{" "}
-      <span className="font-medium">{centsToEurosStr(computed.francoThreshold)} €</span>.
-    </>
-  ) : (
-    <>
-      <span className="font-medium">20 €</span> — seuil{" "}
-      <span className="font-medium">{centsToEurosStr(computed.francoThreshold)} €</span>.
-    </>
-  )}
-</div>
+              Franco :{" "}
+              {orderType === "test" ? (
+                <span className="font-medium">offert (commande test)</span>
+              ) : computed.francoCost === 0 ? (
+                <>
+                  <span className="font-medium">offert</span> — seuil{" "}
+                  <span className="font-medium">{centsToEurosStr(computed.francoThreshold)} €</span>.
+                </>
+              ) : (
+                <>
+                  <span className="font-medium">20 €</span> — seuil{" "}
+                  <span className="font-medium">{centsToEurosStr(computed.francoThreshold)} €</span>.
+                </>
+              )}
+            </div>
           </div>
 
           <div className="rounded-xl border p-3">
@@ -1934,10 +1900,10 @@ const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
 
           <div className="rounded-xl border p-3">
             <div className="text-neutral-700">
-  {deferredPayment
-    ? `Acompte (${computed.depositPct}%)${payBeforeCreateStr ? ` — avant le ${payBeforeCreateStr}` : ""}`
-    : `Acompte (${computed.depositPct}%)`}
-</div>
+              {deferredPayment
+                ? `Acompte (${computed.depositPct}%)${payBeforeCreateStr ? ` — avant le ${payBeforeCreateStr}` : ""}`
+                : `Acompte (${computed.depositPct}%)`}
+            </div>
             <div className="mt-1 text-lg font-semibold tabular-nums">{centsToEurosStr(computed.depositHT)} €</div>
             <div className="mt-1 text-xs text-neutral-500">
               {deferredPayment ? "Paiement différé : acompte 50%." : "Paiement comptant : acompte 0€ (tout en solde)."}
@@ -1945,22 +1911,22 @@ const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
           </div>
 
           <div className="rounded-xl border p-3">
-  <div className="text-neutral-700">
-    {deferredPayment
-      ? `Solde — avant le ${balanceDueCreateStr}`
-      : `Montant à payer — avant le ${payBeforeCreateStr || "—"}`}
-  </div>
+            <div className="text-neutral-700">
+              {deferredPayment
+                ? `Solde — avant le ${balanceDueCreateStr}`
+                : `Montant à payer — avant le ${payBeforeCreateStr || "—"}`}
+            </div>
 
-  <div className="mt-1 text-lg font-semibold tabular-nums">
-    {deferredPayment ? centsToEurosStr(computed.balanceHT) : centsToEurosStr(computed.totalTTC)} €
-  </div>
+            <div className="mt-1 text-lg font-semibold tabular-nums">
+              {deferredPayment ? centsToEurosStr(computed.balanceHT) : centsToEurosStr(computed.totalTTC)} €
+            </div>
 
-  <div className="mt-1 text-xs text-neutral-500">
-    {deferredPayment
-      ? "Paiement différé : solde à régler sous 30 jours (date de signature, sinon date d’émission)."
-      : "Paiement comptant : règlement avant clôture (J-2)."}
-  </div>
-</div>
+            <div className="mt-1 text-xs text-neutral-500">
+              {deferredPayment
+                ? "Paiement différé : solde à régler sous 30 jours (date de signature, sinon date d’émission)."
+                : "Paiement comptant : règlement avant clôture (J-2)."}
+            </div>
+          </div>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -1974,10 +1940,10 @@ const balanceDueCreateStr = fmtDayMonthShort(balanceDueCreateDate);
           </button>
 
           {computed.hasMinError && (
-  <div className="text-xs text-red-700 self-center">
-    Commande bloquée : minimum de 10 posters requis si la commande est en A2 uniquement.
-  </div>
-)}
+            <div className="text-xs text-red-700 self-center">
+              Commande bloquée : minimum de 10 posters requis si la commande est en A2 uniquement.
+            </div>
+          )}
         </div>
       </div>
     </div>

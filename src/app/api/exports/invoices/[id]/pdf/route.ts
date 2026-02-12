@@ -28,19 +28,19 @@ type QuoteMeta = {
   };
 
   posters?: {
-    firstOrder?: boolean;
-    vatExempt?: boolean;
+  orderType?: "test" | "classic";
+  vatExempt?: boolean;
+  deferredPayment?: boolean;
 
-    // ✅ persisté par /api/quotes
-    deferredPayment?: boolean;
+  closingDate?: string;
+  deliveryWindowLabel?: string;
+  discountAppliedPct?: number;
+  francoThreshold?: number;
+  francoCost?: number;
 
-    closingDate?: string;
-    deliveryWindowLabel?: string;
-    discountAppliedPct?: number;
-    francoThreshold?: number;
-    francoCost?: number;
-  };
-
+  paperWeight?: "250g" | "135g";
+  packaging?: "plastic_carton" | "tube";
+};
   // ✅ signature tablette (stockée par /api/quotes/[id]/signature)
   signature?: {
     signedAt?: string; // ISO string

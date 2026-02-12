@@ -24,22 +24,20 @@ function parseSeqFromNumber(numberStr: string): number {
 }
 
 type PostersPayload = {
-  firstOrder: boolean;
-  vatExempt: boolean;
+  // ✅ NEW : remplace firstOrder
+  orderType: "test" | "classic";
 
+  vatExempt: boolean;
   deferredPayment?: boolean;
 
   closingDate: string; // YYYY-MM-DD
   deliveryWindowLabel: string;
   discountAppliedPct?: number;
 
-  // ✅ NEW : impression / colisage
   paperWeight?: "250g" | "135g";
-  packaging?: "tube" | "vrac";
 
-  // ✅ NEW : ligne séparée (tube)
-  tubeCartonEtiquette?: boolean;
-  tubeCartonEtiquetteExtraEuros?: number;
+  // ✅ NEW : colisage sans surcoût
+  packaging?: "plastic_carton" | "tube";
 
   selectionOrderByFmt?: Record<"30x40" | "A3" | "A2", string[]>;
 
@@ -92,19 +90,20 @@ function calcUnitPriceEuros(
   return 0;
 }
 
-function calcUnitPriceEurosFirstOrderAware(
+function calcUnitPriceEurosOrderTypeAware(
   format: "30x40" | "A3" | "A2",
   totalUnitsInFormat: number,
   paper: "250g" | "135g",
-  firstOrder: boolean
+  orderType: "test" | "classic"
 ) {
-  // ✅ Si "Première commande" = ON :
-  // 135g => 10€ ; 250g => 12€ ; quelle que soit la quantité
-  // ⚠️ On ne touche pas A2 (reste sur sa logique spéciale)
-  if (firstOrder && format !== "A2") {
-    return paper === "135g" ? 10 : 12;
+  // ✅ 30×40 : NOUVELLE GRILLE
+  if (format === "30x40") {
+    const n = totalUnitsInFormat;
+    if (orderType === "test") return 11; // 0→50 : 11€
+    return n >= 40 ? 10 : n >= 20 ? 11 : 12; // classique
   }
 
+  // ✅ A3/A2 : on ne change rien
   return calcUnitPriceEuros(format, totalUnitsInFormat, paper);
 }
 
@@ -178,15 +177,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Aucune sélection Posters" }, { status: 400 });
     }
 
-    const firstOrder = Boolean(posters.firstOrder);
-    const vatExempt = posters.vatExempt !== false; // default true
-    const deferredPayment = Boolean(posters.deferredPayment); // ✅ NEW
-    const discountPct = Math.max(0, Math.min(100, Number(posters.discountAppliedPct ?? 0) || 0));
-        const paperWeight = (posters.paperWeight === "135g" ? "135g" : "250g") as "250g" | "135g";
+    const orderType: "test" | "classic" = posters.orderType === "test" ? "test" : "classic";
 
-    const tubeEnabled = Boolean(posters.tubeCartonEtiquette) || posters.packaging === "tube";
-    const tubeExtraEuros = Number(posters.tubeCartonEtiquetteExtraEuros ?? 0) || 0;
-
+const vatExempt = posters.vatExempt !== false; // default true
+const deferredPayment = Boolean(posters.deferredPayment); // ✅ NEW
+const discountPct = Math.max(0, Math.min(100, Number(posters.discountAppliedPct ?? 0) || 0));
+const paperWeight = (posters.paperWeight === "135g" ? "135g" : "250g") as "250g" | "135g";
 
     // --- normalisation selections ---
     const selections = posters.selections
@@ -220,7 +216,7 @@ export async function POST(req: Request) {
     (Object.keys(byFormat) as Array<"30x40" | "A3" | "A2">).forEach((fmt) => {
       const list = byFormat[fmt];
       if (list.length < 2) return;
-      if (firstOrder) return;
+            if (orderType === "test") return;
 
       const ordered = Array.isArray(selectionOrderByFmt?.[fmt]) ? selectionOrderByFmt[fmt] : [];
       const refsInFmt = new Set(list.map((x) => x.ref));
@@ -264,8 +260,8 @@ export async function POST(req: Request) {
       const list = byFormat[fmt];
       if (list.length === 0) return;
 
-      const unitEuros = calcUnitPriceEurosFirstOrderAware(fmt, formatTotals[fmt], paperWeight, firstOrder);
-const unitCents = eurosToCents(String(unitEuros));
+            const unitEuros = calcUnitPriceEurosOrderTypeAware(fmt, formatTotals[fmt], paperWeight, orderType);
+      const unitCents = eurosToCents(String(unitEuros));
 
       for (const s of list) {
         const q = Math.max(1, qtyEffectiveByRef[s.ref] ?? s.qty ?? 1);
@@ -287,16 +283,6 @@ const unitCents = eurosToCents(String(unitEuros));
       }
     });
 
-// ✅ NEW : ligne séparée "tube cartonné + étiquette" (uniquement si sélectionné)
-if (tubeEnabled && totalPostersAllFormats > 0 && tubeExtraEuros > 0) {
-  enforced.push({
-    label: "Finition tube cartonné + Etiquette",
-    qty: totalPostersAllFormats,
-    unitCents: eurosToCents(String(tubeExtraEuros)),
-    sort: sort++,
-  });
-}
-
     // totals HT posters
     const postersHT = enforced.reduce((sum, it) => sum + Math.round(it.qty * it.unitCents), 0);
 
@@ -305,16 +291,17 @@ if (tubeEnabled && totalPostersAllFormats > 0 && tubeExtraEuros > 0) {
     const afterDiscountHT = postersHT - discountAmount;
 
     // ✅ Commande d’essai / première commande : AUCUN frais de port, et pas de seuil
-const francoThreshold = firstOrder ? 0 : 25000;
-const francoCost = firstOrder ? 0 : (afterDiscountHT >= francoThreshold ? 0 : 2000);
+const isTest = orderType === "test";
 
-// ✅ Ligne franco : si commande d’essai => libellé simple sans 120/250
+const francoThreshold = isTest ? 0 : 18000;
+const francoCost = isTest ? 0 : (afterDiscountHT >= francoThreshold ? 0 : 2000);
+
 const francoLabel =
-  firstOrder
-    ? "Livraison offerte (commande d’essai)"
+  isTest
+    ? "Livraison offerte (commande test)"
     : francoCost === 0
-      ? "Livraison offerte (Franco supérieur à 250€ HT)"
-      : "Frais de livraison (Franco supérieur à 250€ HT)";
+      ? "Livraison offerte (Franco supérieur à 180€ HT)"
+      : "Frais de livraison (Franco supérieur à 180€ HT)";
 
 enforced.push({
   label: francoLabel,
@@ -370,29 +357,25 @@ const totalHT = afterDiscountHT + francoCost;
           ...base,
           posters: {
   ...(base?.posters ?? {}),
-  firstOrder,
+  orderType, // ✅ NEW
   vatExempt,
 
-  // ✅ IMPORTANT : persist pour le PDF
   deferredPayment,
-
   discountAppliedPct: discountPct,
   francoThreshold,
   francoCost,
   closingDate: String(posters.closingDate ?? ""),
   deliveryWindowLabel: String(posters.deliveryWindowLabel ?? ""),
-  paperWeight,
-packaging: posters.packaging ?? "vrac",
-tubeCartonEtiquette: tubeEnabled,
-tubeCartonEtiquetteExtraEuros: tubeExtraEuros,
 
-  // ✅ IMPORTANT : nécessaire pour /api/orders (Commandes)
+  paperWeight,
+  packaging: (posters.packaging === "tube" ? "tube" : "plastic_carton"),
+
   selections: selections.map((s) => ({
     format: s.format,
     ref: s.ref,
     name: s.name || "-",
     qty: Math.max(1, qtyEffectiveByRef[s.ref] ?? s.qty ?? 1),
-grammage: (s.grammage || paperWeight),
+    grammage: (s.grammage || paperWeight),
   })),
 },
 
