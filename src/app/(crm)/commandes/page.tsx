@@ -129,7 +129,7 @@ setSelectedClosure((prev) => prev || lastWithOrdersKey);
         <div>
           <div className="text-3xl font-semibold">Commandes</div>
           <div className="text-sm text-neutral-600">
-            Récap des commandes (devis transformés en factures), regroupées par clôture (1er / 15).
+            Récap des commandes (page skgl + CRM), regroupées par clôture (ou date pour les commandes test).
           </div>
         </div>
       </div>

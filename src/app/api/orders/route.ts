@@ -7,17 +7,17 @@ export const dynamic = "force-dynamic";
 
 type PosterFormat = "30x40" | "A3" | "A2";
 
-type QuoteMeta = {
-  mode?: string;
-  posters?: {
-    closingDate?: string; // YYYY-MM-DD (1er ou 15)
-    selections?: Array<{
-      format?: PosterFormat;
-      ref?: string; // R-XXXXXX
-      name?: string; // "Shizuka no Tsubasa — Les ailes silencieuses" (latin+FR)
-      qty?: number;
-    }>;
-  };
+type ItemAgg = {
+  format: PosterFormat;
+  ref: string;
+  name: string;
+  totalQty: number;
+  clients: Array<{ clientId: string; clientName: string; qty: number }>;
+};
+
+type ClosureAgg = {
+  key: string; // YYYY-MM-DD (clôture) ou date de création (TEST)
+  items: ItemAgg[];
 };
 
 function safeJsonParse<T>(s: string | null | undefined): T | null {
@@ -29,59 +29,42 @@ function safeJsonParse<T>(s: string | null | undefined): T | null {
   }
 }
 
-function normalizeFormat(v: unknown): PosterFormat | null {
-  const s = String(v || "").trim();
-  if (s === "30x40" || s === "A3" || s === "A2") return s;
-  return null;
+function isoDateOnly(d: Date) {
+  return d.toISOString().slice(0, 10);
 }
 
-function normalizeQty(v: unknown): number {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return 0;
-  const i = Math.trunc(n);
-  return i > 0 ? i : 0;
-}
-
-type ItemAgg = {
-  format: PosterFormat;
-  ref: string;
-  name: string;
-  totalQty: number;
-  clients: Array<{ clientId: string; clientName: string; qty: number }>;
+type OrderMetaLite = {
+  closureDateISO?: string | null;
 };
 
-type ClosureAgg = {
-  key: string; // YYYY-MM-DD
-  items: ItemAgg[];
+type OrderRow = {
+  id: string;
+  createdAt: Date;
+  firstName: string;
+  lastName: string;
+  companyName: string | null;
+  items: Array<{ ref: string; label: string; qty: number; sort: number }>;
+  metaJson: string | null;
 };
 
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
-    const onlyStatus = String(url.searchParams.get("status") || "ALL"); // ALL | ISSUED | PAID
     const formatFilter = String(url.searchParams.get("format") || "ALL"); // ALL | 30x40 | A3 | A2
 
-    const whereStatus =
-      onlyStatus === "ISSUED"
-        ? { status: "ISSUED" as const }
-        : onlyStatus === "PAID"
-          ? { status: "PAID" as const }
-          : undefined;
-
-    // ✅ On ne prend que les factures issues d’un devis (quoteId != null)
-    const invoices = await prisma.invoice.findMany({
-      where: {
-        quoteId: { not: null },
-        ...(whereStatus ? whereStatus : {}),
-      },
+    // ✅ on prend toutes les commandes
+    const orders = (await prisma.order.findMany({
       select: {
         id: true,
-        status: true,
-        client: { select: { id: true, displayName: true } },
-        quote: { select: { id: true, metaJson: true, clientName: true } },
+        createdAt: true,
+        firstName: true,
+        lastName: true,
+        companyName: true,
+        metaJson: true,
+        items: { select: { ref: true, label: true, qty: true, sort: true } },
       },
       orderBy: { createdAt: "desc" },
-    });
+    })) as unknown as OrderRow[];
 
     // closureKey -> itemKey -> agg
     const closureMap = new Map<
@@ -98,32 +81,32 @@ export async function GET(req: Request) {
       >
     >();
 
-    for (const inv of invoices) {
-      const q = inv.quote;
-      if (!q) continue;
+    for (const o of orders) {
+      const meta = safeJsonParse<OrderMetaLite>(o.metaJson) ?? {};
+      const closureKey = String(meta.closureDateISO || "").trim() || isoDateOnly(new Date(o.createdAt));
 
-      const meta = safeJsonParse<QuoteMeta>(q.metaJson) ?? {};
-      const posters = meta.posters ?? {};
-      const closingDate = String(posters.closingDate || "").trim();
-      if (!closingDate) continue;
+      const clientId = o.id; // ✅ suffisant pour la clé unique dans le détail
+      const clientName = (o.companyName && o.companyName.trim())
+        ? o.companyName.trim()
+        : `${String(o.firstName || "").trim()} ${String(o.lastName || "").trim()}`.trim() || "Client";
 
-      const selections = Array.isArray(posters.selections) ? posters.selections : [];
-      if (selections.length === 0) continue;
+      if (!closureMap.has(closureKey)) closureMap.set(closureKey, new Map());
+      const itemMap = closureMap.get(closureKey)!;
 
-      const clientId = inv.client?.id || "unknown";
-      const clientName = String(inv.client?.displayName || q.clientName || "Client").trim();
+      const items = Array.isArray(o.items) ? o.items.slice() : [];
+      items.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
 
-      if (!closureMap.has(closingDate)) closureMap.set(closingDate, new Map());
-      const itemMap = closureMap.get(closingDate)!;
+      for (const it of items) {
+        const ref = String(it.ref || "").trim();
+        const name = String(it.label || "-").trim();
+        const qty = Math.max(0, Number(it.qty ?? 0) || 0);
 
-      for (const s of selections) {
-        const fmt = normalizeFormat(s.format);
-        const ref = String(s.ref || "").trim();
-        const name = String(s.name || "-").trim();
-        const qty = normalizeQty(s.qty);
+        if (!ref || qty <= 0) continue;
 
-        if (!fmt || !ref || qty <= 0) continue;
+        // on ignore la ligne livraison dans l’agrégation produit
+        if (ref.toUpperCase() === "LIVRAISON") continue;
 
+        const fmt: PosterFormat = "30x40";
         if (formatFilter !== "ALL" && fmt !== formatFilter) continue;
 
         const itemKey = `${fmt}__${ref}`;
@@ -152,7 +135,6 @@ export async function GET(req: Request) {
       .map(([key, itemMap]) => {
         const items: ItemAgg[] = Array.from(itemMap.values())
           .sort((a, b) => {
-            // tri: format puis ref
             if (a.format !== b.format) return a.format.localeCompare(b.format);
             return a.ref.localeCompare(b.ref);
           })

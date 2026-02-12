@@ -197,6 +197,41 @@ function readPngSize(filePath: string): { w: number; h: number } | null {
   }
 }
 
+type InvoiceMetaSkgl = {
+  source?: string;
+  orderId?: string;
+  orderNumber?: string;
+  orderSnapshot?: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    companyName?: string | null;
+    siret?: string | null;
+    street?: string;
+    postalCode?: string;
+    city?: string;
+    deliveryWindowLabel?: string;
+    packagingLabel?: string;
+    payBeforeDateIso?: string;
+  };
+};
+
+function eurosCents(cents: number) {
+  return (cents / 100).toFixed(2).replace(".", ",") + " €";
+}
+
+function decodeDataUrlToPngBuffer(dataUrl: string): Buffer | null {
+  try {
+    const s = String(dataUrl || "");
+    if (!s.startsWith("data:image/")) return null;
+    const base64 = s.split(",")[1] || "";
+    if (!base64) return null;
+    return Buffer.from(base64, "base64");
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const invoice = await prisma.invoice.findUnique({
     where: { id: params.id },
@@ -204,6 +239,242 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   });
 
   if (!invoice) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // =========================
+  // ✅ MODE SKGL (facture issue d'une commande)
+  // =========================
+  const invMetaAny = safeJsonParse<InvoiceMetaSkgl>((invoice as any).metaJson) ?? {};
+  if (String(invMetaAny?.source || "") === "SKGL_ORDER" && invMetaAny.orderSnapshot) {
+    const snap = invMetaAny.orderSnapshot;
+
+    // Police locale
+    const fontPath = path.join(process.cwd(), "src", "assets", "fonts", "DejaVuSans.ttf");
+    const fontBoldPath = path.join(process.cwd(), "src", "assets", "fonts", "DejaVuSans-Bold.ttf");
+
+    const doc = new PdfDoc({ size: "A4", margin: 50, autoFirstPage: false, font: null });
+
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    const done = new Promise<Buffer>((resolve, reject) => {
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+    });
+
+    if (fs.existsSync(fontPath)) {
+      doc.registerFont("base", fontPath);
+      doc.font("base");
+    }
+    if (fs.existsSync(fontBoldPath)) {
+      doc.registerFont("baseBold", fontBoldPath);
+    }
+    const hasBold = fs.existsSync(fontBoldPath);
+
+    doc.addPage({ size: "A4", margin: 50 });
+
+    const pageW = 595.28;
+    const pageH = 841.89;
+    const left = 50;
+    const right = 50;
+    const usableW = pageW - left - right;
+
+    const footerY = pageH - 50 - 10;
+    const FOOTER_SAFE_TOP = footerY - 18;
+
+    // fond + dentelle (déjà dans ton fichier)
+    drawBackgroundAndLace(doc, pageW, pageH);
+
+    // Logo
+    const logoPath = path.join(process.cwd(), "public", "hero-fromage.png");
+    const logoW = Math.round(220 * 1.2);
+    const logoX = left + (usableW - logoW) / 2;
+    const MM = (mm: number) => (72 / 25.4) * mm;
+    const TOP_EDGE_MM = 3;
+    const LOGO_NUDGE_UP_PTS = 55;
+    const logoY = MM(TOP_EDGE_MM) - LOGO_NUDGE_UP_PTS;
+
+    let logoH = 90;
+    if (fs.existsSync(logoPath)) {
+      const sz = readPngSize(logoPath);
+      logoH = sz ? Math.round(logoW * (sz.h / sz.w)) : Math.round(logoW * 0.35);
+      doc.image(logoPath, logoX, logoY, { width: logoW });
+    } else {
+      doc.fontSize(18).fillColor("black").text("SEIKAN GALLERY", left, logoY + 20, { width: usableW, align: "center" });
+    }
+
+    const titleY = logoY + logoH - 53;
+
+    doc.font(hasBold ? "baseBold" : "base").fontSize(16).fillColor("black").text(
+      `FACTURE ${(invoice as any).number ?? ""}`,
+      left,
+      titleY,
+      { width: usableW, align: "center" }
+    );
+    doc.font("base");
+
+    // Colonnes Émetteur / Destinataire
+    const gap = 30;
+    const colW = (usableW - gap) / 2;
+    const leftColX = left;
+    const rightColX = left + colW + gap;
+
+    const baseColsY = titleY + 28;
+
+    const issuerLines = [
+      "SEIKAN GALLERY",
+      "SIRET : 90051575000025",
+      "seikan.gallery@gmail.com",
+      "0610380208",
+      "5 Rue de Normandie, 91210 Draveil",
+    ].join("\n");
+
+    const destLines: string[] = [];
+    const fullName = `${String(snap.lastName ?? "").toUpperCase()} ${String(snap.firstName ?? "").trim()}`.trim();
+    if (fullName) destLines.push(fullName);
+    if (snap.companyName) destLines.push(String(snap.companyName));
+    if (snap.siret) destLines.push(`SIRET : ${String(snap.siret)}`);
+    if (snap.email) destLines.push(String(snap.email));
+    const addr = `${String(snap.street ?? "")}, ${String(snap.postalCode ?? "")} ${String(snap.city ?? "")}`.trim();
+    if (addr.replace(",", "").trim()) destLines.push(addr);
+
+    const destText = destLines.filter(Boolean).join("\n");
+
+    doc.fontSize(11).fillColor("black").text("Émetteur :", leftColX, baseColsY);
+    doc.fontSize(10).fillColor("black").text(issuerLines, leftColX, baseColsY + 16, { width: colW });
+
+    doc.fontSize(11).fillColor("black").text("Destinataire :", rightColX, baseColsY, { width: colW });
+    doc.fontSize(10).fillColor("black").text(destText, rightColX, baseColsY + 16, { width: colW });
+
+    doc.fontSize(10);
+    const issuerH = doc.heightOfString(issuerLines, { width: colW, lineGap: 2 });
+    const destH = doc.heightOfString(destText, { width: colW, lineGap: 2 });
+
+    let y = baseColsY + 16 + Math.max(issuerH, destH) + 18;
+
+    // Livraison + émission + paiement avant
+    doc.fontSize(11).fillColor("black").text("Livraison :", leftColX, y, { width: colW });
+    doc.fontSize(10).fillColor("black").text(String(snap.deliveryWindowLabel ?? "—"), leftColX, y + 16, {
+      width: colW,
+      lineBreak: false,
+      ellipsis: true,
+    });
+
+    const issuedAt = new Date((invoice as any).issuedAt ?? (invoice as any).createdAt ?? Date.now());
+    doc.fontSize(10).fillColor("black").text(`Date d'émission : ${formatDateFRShort(issuedAt)}`, rightColX, y, { width: colW });
+
+    const payBefore = snap.payBeforeDateIso ? new Date(String(snap.payBeforeDateIso)) : null;
+    const payBeforeLabel = payBefore && !Number.isNaN(payBefore.getTime()) ? formatDateFRShort(payBefore) : "—";
+    doc.fontSize(10).fillColor("black").text(`Paiement avant le : ${payBeforeLabel}`, rightColX, y + 16, { width: colW });
+
+    y += 58;
+
+    // Tableau (on utilise invoice.items)
+    const colDesignationX = left;
+    const colQtyW = 55;
+    const colUnitW = 95;
+    const colAmountW = 110;
+
+    const colAmountX = left + usableW - colAmountW;
+    const colUnitX = colAmountX - colUnitW;
+    const colQtyX = colUnitX - colQtyW;
+
+    const colDesignationW = colQtyX - colDesignationX - 10;
+
+    function drawHeader(y0: number) {
+      doc.fontSize(10).fillColor("black").text("Désignation", colDesignationX, y0, { width: colDesignationW });
+      doc.text("Qté", colQtyX, y0, { width: colQtyW, align: "right" });
+      doc.text("PU HT", colUnitX, y0, { width: colUnitW, align: "right" });
+      doc.text("Montant HT", colAmountX, y0, { width: colAmountW, align: "right" });
+
+      y0 += 16;
+      doc.moveTo(left, y0).lineTo(left + usableW, y0).stroke();
+      y0 += 8;
+      return y0;
+    }
+
+    y = drawHeader(y + 12);
+
+    const items = ((invoice as any).items ?? []).slice().sort((a: any, b: any) => (a.sort ?? 0) - (b.sort ?? 0));
+    doc.fontSize(9.2).fillColor("black");
+
+    for (const it of items) {
+      const label = String(it.label ?? "");
+      const qty = Math.max(0, Number(it.qty ?? 0));
+      const unit = Math.max(0, Number(it.unitPrice ?? 0));
+      const amount = Math.round(qty * unit);
+
+      doc.text(label, colDesignationX, y, { width: colDesignationW });
+      doc.text(String(qty), colQtyX, y, { width: colQtyW, align: "right" });
+      doc.text(eurosCents(unit), colUnitX, y, { width: colUnitW, align: "right" });
+      doc.text(eurosCents(amount), colAmountX, y, { width: colAmountW, align: "right" });
+
+      const h = doc.heightOfString(label, { width: colDesignationW, lineGap: 1 });
+      y += Math.max(h, 12) + 3;
+
+      if (y > FOOTER_SAFE_TOP - 120) {
+        // pas de multi-pages ici : SKGL reste court (2-6 lignes)
+        // on sécurise : on stoppe si jamais
+        break;
+      }
+    }
+
+    y += 4;
+    doc.moveTo(left, y).lineTo(left + usableW, y).stroke();
+    y += 12;
+
+    const totalHT = Number((invoice as any).totalHT ?? 0) || 0;
+    doc.font(hasBold ? "baseBold" : "base").fontSize(11).text(`TOTAL : ${eurosCents(totalHT)}`, left, y, { width: usableW, align: "right" });
+    doc.font("base");
+    y += 18;
+
+    // Bloc paiement + emballage
+    doc.fontSize(10).fillColor("#111").text(
+      `Emballage : ${String(snap.packagingLabel ?? "—")}\nPaiement à effectuer avant le ${payBeforeLabel}, sinon la commande ne sera pas lancée.`,
+      left,
+      y,
+      { width: usableW, lineGap: 2 }
+    );
+    y += 40;
+
+    // Bloc légal / paiement
+    const LEGAL_BLOCK = [
+      "IBAN : FR76 1213 5003 0004 2562 6218 853",
+      "BIC : CEPAFRPP213",
+      "",
+      "À défaut de règlement à réception (paiement comptant), l’exécution de la commande est suspendue jusqu’à encaissement",
+      "et la livraison pourra être reportée à la clôture de commande suivante.",
+      "Une indemnité forfaitaire de 40 € pour frais de recouvrement sera également exigible (articles L.441-10",
+      "et D.441-5 du Code de commerce).",
+      "Mentions légales :",
+      "- TVA non applicable, art. 293 B du CGI",
+    ].join("\n");
+
+    if (y > FOOTER_SAFE_TOP - 92) y = FOOTER_SAFE_TOP - 92;
+
+    doc.fontSize(8.8).fillColor("#111").text(LEGAL_BLOCK, left, y + 10, {
+      width: usableW,
+      lineGap: 2,
+      align: "left",
+    });
+
+    // Footer
+    doc.save();
+    doc.font("base").fontSize(8).fillColor("#111");
+    doc.text("SEIKAN GALLERY", left, footerY, { width: usableW / 2, align: "left", lineBreak: false, ellipsis: true });
+    doc.text("Page 1/1", left + usableW / 2, footerY, { width: usableW / 2, align: "right", lineBreak: false, ellipsis: true });
+    doc.restore();
+
+    doc.end();
+
+    const pdfBuffer = await done;
+    const body = new Uint8Array(pdfBuffer);
+
+    return new NextResponse(body, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="Facture_${(invoice as any).number ?? "FACTURE"}.pdf"`,
+      },
+    });
+  }
 
   const invMeta = safeJsonParse<InvoiceMeta>((invoice as any).metaJson) ?? {};
   const quoteMetaJson = invMeta.fromQuoteMetaJson ?? (invoice as any).quote?.metaJson ?? null;

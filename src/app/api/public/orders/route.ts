@@ -136,6 +136,7 @@ type PublicOrderPayload = {
 
 function makeEmailHtml(args: {
   orderNumber: string;
+  invoiceNumber: string;
   customerName: string;
   deliveryWindow: string;
   totalCents: number;
@@ -152,10 +153,11 @@ function makeEmailHtml(args: {
 
     <p style="margin:0 0 12px 0">
       Votre commande est confirmée et signée (“Bon pour accord”).<br/>
-      Vous trouverez la commande signée en pièce jointe (PDF).
+      Vous trouverez la commande signée (PDF) et la facture (PDF) en pièces jointes.
     </p>
 
     <p style="margin:0 0 14px 0">
+      <strong>Facture :</strong> ${args.invoiceNumber}<br/>
       <strong>Livraison :</strong> ${args.deliveryWindow}<br/>
       <strong>Total :</strong> ${euros} € HT
     </p>
@@ -173,6 +175,14 @@ function makeEmailHtml(args: {
     </p>
   </div>
   `;
+}
+
+function parseSeqFromNumber(numberStr: string): number {
+  // attendu: FAC-YYYY-000001
+  const parts = String(numberStr || "").split("-");
+  const seq = parts[2] ?? "";
+  const n = parseInt(seq, 10);
+  return Number.isFinite(n) ? n : 0;
 }
 
 export async function POST(req: Request) {
@@ -213,33 +223,34 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Bon pour accord + signature obligatoires." }, { status: 400 });
     }
 
-    // --- emballage (on garde ce que le front envoie, avec fallback) ---
+    // --- emballage ---
     const packagingLabel = normalize(body.packagingLabel || "Emballage en pochette plastique + carton rigide");
 
     // --- livraison + payBeforeDate (recalcul serveur) ---
     let deliveryWindowLabel = normalize(body.deliveryWindowLabel || "Livraison entre le 12 et le 15 mars");
     let payBeforeDate = new Date(`${new Date().getFullYear()}-03-01T00:00:00.000Z`);
-if (kind === "CLASSIC") {
-  if (!closureDateISO) {
-    return NextResponse.json({ error: "Clôture obligatoire pour une commande classique." }, { status: 400 });
-  }
 
-  const allowed = allowedClassicClosuresISO(new Date());
-  if (!allowed.includes(closureDateISO)) {
-    return NextResponse.json(
-      { error: "Clôture non autorisée (merci de choisir une des 2 prochaines clôtures proposées)." },
-      { status: 400 }
-    );
-  }
+    if (kind === "CLASSIC") {
+      if (!closureDateISO) {
+        return NextResponse.json({ error: "Clôture obligatoire pour une commande classique." }, { status: 400 });
+      }
 
-  const computedDelivery = deliveryWindowFromClosureISO(closureDateISO);
-  if (!computedDelivery) {
-    return NextResponse.json({ error: "Clôture invalide." }, { status: 400 });
-  }
+      const allowed = allowedClassicClosuresISO(new Date());
+      if (!allowed.includes(closureDateISO)) {
+        return NextResponse.json(
+          { error: "Clôture non autorisée (merci de choisir une des 2 prochaines clôtures proposées)." },
+          { status: 400 }
+        );
+      }
 
-  deliveryWindowLabel = computedDelivery;
-  payBeforeDate = new Date(`${closureDateISO}T00:00:00.000Z`);
-}
+      const computedDelivery = deliveryWindowFromClosureISO(closureDateISO);
+      if (!computedDelivery) {
+        return NextResponse.json({ error: "Clôture invalide." }, { status: 400 });
+      }
+
+      deliveryWindowLabel = computedDelivery;
+      payBeforeDate = new Date(`${closureDateISO}T00:00:00.000Z`);
+    }
 
     // --- items (nettoyage) ---
     const items = Array.isArray(body.items) ? body.items : [];
@@ -298,7 +309,7 @@ if (kind === "CLASSIC") {
       shippingCents = postersSubtotalCents >= FRANCO_CLASSIC_EUR * 100 ? 0 : SHIPPING_CLASSIC_EUR * 100;
     }
 
-    // --- items reconstruits (posters au bon PU + livraison serveur) ---
+    // --- items reconstruits ---
     const rebuiltItems: PublicOrderItem[] = [
       ...posterItems.map((it) => ({
         ref: it.ref,
@@ -324,14 +335,14 @@ if (kind === "CLASSIC") {
 
     const totalCents = rebuiltItems.reduce((s, it) => s + it.qty * it.unitPriceCents, 0);
 
-    // --- Numérotation ---
+    // --- Numérotation Order ---
     const agg = await prisma.order.aggregate({ _max: { seq: true } });
     const nextSeq = (agg._max.seq ?? 0) + 1;
     const year = new Date().getFullYear();
     const number = `CMD-${year}-${pad6(nextSeq)}`;
 
-    // --- metaJson (pour PDF) ---
-    const metaJson = JSON.stringify({
+    // --- metaJson Order (pour PDF + regroupement Commandes) ---
+    const orderMeta = {
       code,
       kind,
       closureMonthKey,
@@ -354,9 +365,9 @@ if (kind === "CLASSIC") {
         signedAt,
         signatureDataUrl,
       },
-    });
+    };
 
-    // --- DB create ---
+    // --- DB create Order ---
     const order = await prisma.order.create({
       data: {
         seq: nextSeq,
@@ -374,7 +385,7 @@ if (kind === "CLASSIC") {
         packagingLabel,
         deliveryWindowLabel,
         payBeforeDate,
-        metaJson,
+        metaJson: JSON.stringify(orderMeta),
         totalCents,
         items: {
           create: rebuiltItems.map((it) => ({
@@ -389,19 +400,145 @@ if (kind === "CLASSIC") {
       include: { items: true },
     });
 
-    // --- PDF ---
+    // ===========================
+    // ✅ CRM : créer/mettre à jour Client + Facture auto
+    // ===========================
+
+    // 1) Client (email NON unique dans ton schema -> findFirst puis update/create)
+const displayName = companyName ? companyName : `${firstName} ${lastName}`.trim();
+
+const existingClient = await prisma.client.findFirst({
+  where: { email }, // ok même si email n'est pas unique
+  select: { id: true },
+});
+
+const client = existingClient
+  ? await prisma.client.update({
+      where: { id: existingClient.id },
+      data: {
+        displayName,
+        companyName: companyName ?? null,
+        // on aligne l'adresse (simple : on stocke en string)
+        billingAddress: `${street}, ${postalCode} ${city}`.trim(),
+        shippingAddress: `${street}, ${postalCode} ${city}`.trim(),
+        // on ne force pas phone/tags/notes : on ne touche pas
+      },
+      select: { id: true },
+    })
+  : await prisma.client.create({
+      data: {
+        type: companyName ? "COMPANY" : "INDIVIDUAL",
+        typeLocked: Boolean(companyName),
+        companyName: companyName ?? null,
+        serviceName: null,
+        displayName,
+        email, // ton Client.email est optionnel, mais ici on en a un (order email)
+        phone: null,
+        billingAddress: `${street}, ${postalCode} ${city}`.trim(),
+        shippingAddress: `${street}, ${postalCode} ${city}`.trim(),
+        tags: [],
+        notes: null,
+      },
+      select: { id: true },
+    });
+
+    // 2) Numérotation Facture FAC-YYYY-000001 (comme /api/invoices)
+    const invYear = new Date().getFullYear();
+    const prefix = `FAC-${invYear}-`;
+
+    const lastThisYear = await prisma.invoice.findFirst({
+      where: { number: { startsWith: prefix } },
+      orderBy: { number: "desc" },
+      select: { number: true },
+    });
+
+    const lastSeq = lastThisYear?.number ? parseSeqFromNumber(lastThisYear.number) : 0;
+    const nextInvSeq = lastSeq + 1;
+    const invoiceNumber = `${prefix}${pad6(nextInvSeq)}`;
+
+    // 3) Créer Invoice + lignes (unitPrice en cents, cohérent avec ton PDF facture)
+    const invoiceMeta = {
+      source: "SKGL_ORDER",
+      orderId: order.id,
+      orderNumber: order.number,
+
+      // ✅ infos nécessaires au PDF facture sans Quote
+      orderSnapshot: {
+        firstName,
+        lastName,
+        email,
+        companyName,
+        siret,
+        street,
+        postalCode,
+        city,
+        deliveryWindowLabel,
+        packagingLabel,
+        payBeforeDateIso: payBeforeDate.toISOString(),
+      },
+
+      // ✅ statut envoi email (si tu veux badge plus tard)
+      emailSentAt: null,
+      emailSentCount: 0,
+      emailSentTo: null,
+      emailLastSubject: null,
+    };
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        number: invoiceNumber,
+        status: "ISSUED", // ✅ générée automatiquement
+        issuedAt: new Date(),
+        dueAt: payBeforeDate,
+
+        clientId: client.id,
+        quoteId: null, // ✅ pas de devis
+
+        currency: "EUR",
+        metaJson: JSON.stringify(invoiceMeta),
+
+        // ✅ montants en cents
+        totalHT: totalCents,
+        depositPct: 0,
+        depositHT: 0,
+        depositPaid: false,
+        depositPaidAmount: 0,
+
+        items: {
+          create: rebuiltItems.map((it) => ({
+            label: `${it.ref} — ${it.label} (30×40)`,
+            qty: it.qty,
+            unitPrice: it.unitPriceCents, // cents
+            vatRate: 0,
+            discountRate: 0,
+            sort: it.sort ?? 0,
+          })),
+        },
+      },
+      select: { id: true, number: true },
+    });
+
+    // --- PDF Commande (déjà existant chez toi) ---
     const origin = new URL(req.url).origin;
-    const pdfUrl = `${origin}/api/exports/orders/${order.id}/pdf`;
-    const pdfResp = await fetch(pdfUrl, { method: "GET" });
 
-    if (!pdfResp.ok) {
-      const txt = await pdfResp.text().catch(() => "");
-      console.error("ORDER PDF EXPORT FAILED", { status: pdfResp.status, txt });
-      return NextResponse.json({ error: `Commande créée mais PDF impossible (${pdfResp.status}).` }, { status: 500 });
+    const orderPdfUrl = `${origin}/api/exports/orders/${order.id}/pdf`;
+    const orderPdfResp = await fetch(orderPdfUrl, { method: "GET" });
+    if (!orderPdfResp.ok) {
+      const txt = await orderPdfResp.text().catch(() => "");
+      console.error("ORDER PDF EXPORT FAILED", { status: orderPdfResp.status, txt });
+      return NextResponse.json({ error: `Commande créée mais PDF commande impossible (${orderPdfResp.status}).` }, { status: 500 });
     }
+    const orderPdfBuffer = Buffer.from(await orderPdfResp.arrayBuffer());
 
-    const pdfArrayBuffer = await pdfResp.arrayBuffer();
-    const pdfBuffer = Buffer.from(pdfArrayBuffer);
+    // --- PDF Facture ---
+    const invoicePdfUrl = `${origin}/api/exports/invoices/${invoice.id}/pdf`;
+    const invoicePdfResp = await fetch(invoicePdfUrl, { method: "GET" });
+    if (!invoicePdfResp.ok) {
+      const txt = await invoicePdfResp.text().catch(() => "");
+      console.error("INVOICE PDF EXPORT FAILED", { status: invoicePdfResp.status, txt });
+      return NextResponse.json({ error: `Commande + facture créées mais PDF facture impossible (${invoicePdfResp.status}).` }, { status: 500 });
+    }
+    const invoicePdfBuffer = Buffer.from(await invoicePdfResp.arrayBuffer());
 
     // --- mail ---
     const smtpFrom = process.env.SMTP_FROM || process.env.SMTP_USER || "seikan.gallery@gmail.com";
@@ -412,6 +549,7 @@ if (kind === "CLASSIC") {
     const subject = `Seikan Gallery — Commande signée ${order.number}`;
     const html = makeEmailHtml({
       orderNumber: order.number,
+      invoiceNumber: invoice.number,
       customerName: `${firstName} ${lastName}`.trim(),
       deliveryWindow: deliveryWindowLabel,
       totalCents,
@@ -427,13 +565,24 @@ if (kind === "CLASSIC") {
       attachments: [
         {
           filename: `Commande_${order.number}.pdf`,
-          content: pdfBuffer,
+          content: orderPdfBuffer,
+          contentType: "application/pdf",
+        },
+        {
+          filename: `Facture_${invoice.number}.pdf`,
+          content: invoicePdfBuffer,
           contentType: "application/pdf",
         },
       ],
     });
 
-    return NextResponse.json({ ok: true, orderId: order.id, number: order.number });
+    return NextResponse.json({
+      ok: true,
+      orderId: order.id,
+      number: order.number,
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.number,
+    });
   } catch (e: any) {
     console.error("POST /api/public/orders ERROR", e);
     return NextResponse.json({ error: e?.message ?? "Erreur serveur" }, { status: 500 });
