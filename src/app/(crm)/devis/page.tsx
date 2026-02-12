@@ -387,8 +387,8 @@ function next12ClosingsFirstOfMonth(from = new Date()) {
 }
 
 function computeDeliveryWindowFromClosure(closure: Date) {
-  const start = addDays(closure, 12);
-  const end = addDays(closure, 15);
+  const start = addDays(closure, 11);
+  const end = addDays(closure, 14);
 
   const s = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" }).format(start);
   const e = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" }).format(end);
@@ -1786,7 +1786,7 @@ function QuoteCreateForm({ clientFromUrl }: { clientFromUrl: string }) {
           <div className="text-sm">
             <div className="text-neutral-600">Livraison estimée</div>
             <div className="mt-1 rounded-xl border px-3 py-2 text-sm bg-neutral-50">{deliveryWindowLabel || "—"}</div>
-            <div className="mt-1 text-xs text-neutral-500">Estimation : J+12 à J+15 après la clôture.</div>
+            <div className="mt-1 text-xs text-neutral-500">Estimation : J+11 à J+14 après la clôture.</div>
           </div>
         </div>
       </div>
