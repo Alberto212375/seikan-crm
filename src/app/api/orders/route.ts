@@ -40,6 +40,7 @@ type OrderMetaLite = {
 type OrderRow = {
   id: string;
   createdAt: Date;
+  payBeforeDate: Date | null;
   firstName: string;
   lastName: string;
   companyName: string | null;
@@ -55,14 +56,15 @@ export async function GET(req: Request) {
     // ✅ on prend toutes les commandes
     const orders = (await prisma.order.findMany({
       select: {
-        id: true,
-        createdAt: true,
-        firstName: true,
-        lastName: true,
-        companyName: true,
-        metaJson: true,
-        items: { select: { ref: true, label: true, qty: true, sort: true } },
-      },
+  id: true,
+  createdAt: true,
+  payBeforeDate: true,
+  firstName: true,
+  lastName: true,
+  companyName: true,
+  metaJson: true,
+  items: { select: { ref: true, label: true, qty: true, sort: true } },
+},
       orderBy: { createdAt: "desc" },
     })) as unknown as OrderRow[];
 
@@ -82,13 +84,21 @@ export async function GET(req: Request) {
     >();
 
     for (const o of orders) {
-      const meta = safeJsonParse<OrderMetaLite>(o.metaJson) ?? {};
-      const closureKey = String(meta.closureDateISO || "").trim() || isoDateOnly(new Date(o.createdAt));
+  const meta = safeJsonParse<OrderMetaLite>(o.metaJson) ?? {};
 
-      const clientId = o.id; // ✅ suffisant pour la clé unique dans le détail
-      const clientName = (o.companyName && o.companyName.trim())
-        ? o.companyName.trim()
-        : `${String(o.firstName || "").trim()} ${String(o.lastName || "").trim()}`.trim() || "Client";
+  // ✅ Priorité :
+  // 1) closureDateISO (commande CLASSIC)
+  // 2) payBeforeDate (commande TEST)
+  // 3) createdAt (fallback sécurité)
+  const closureKey =
+    String(meta.closureDateISO || "").trim() ||
+    isoDateOnly(new Date(o.payBeforeDate ?? o.createdAt));
+
+  const clientId = o.id; // clé unique suffisante
+  const clientName =
+    o.companyName && o.companyName.trim()
+      ? o.companyName.trim()
+      : `${String(o.firstName || "").trim()} ${String(o.lastName || "").trim()}`.trim() || "Client";
 
       if (!closureMap.has(closureKey)) closureMap.set(closureKey, new Map());
       const itemMap = closureMap.get(closureKey)!;

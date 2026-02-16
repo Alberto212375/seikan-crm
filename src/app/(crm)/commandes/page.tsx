@@ -45,25 +45,30 @@ function fmtDateFRLongFromIso(iso: string) {
   return d.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
 }
 
-function toIsoDateOnly(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x.toISOString().slice(0, 10);
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+// ✅ clé ISO YYYY-MM-DD en UTC (stable, pas de décalage 31/28)
+function toIsoDateOnlyUTC(d: Date) {
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
 }
 
 // ✅ EXACTEMENT comme dans la rédaction de devis : uniquement les 1er du mois, sur 12 mois
+// ✅ mais généré en UTC pour matcher /api/orders (et éviter les fins de mois)
 function next12ClosingsFirstOfMonth(from = new Date()) {
-  const base = new Date(from);
-  base.setHours(0, 0, 0, 0);
+  const baseUTC = new Date(Date.UTC(from.getFullYear(), from.getMonth(), from.getDate()));
 
   // prochaine clôture = 1er du mois (mois courant si on est le 1er, sinon mois suivant)
-  let cur = new Date(base.getFullYear(), base.getMonth(), 1);
-  if (base.getTime() > cur.getTime()) cur = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+  let cur = new Date(Date.UTC(baseUTC.getUTCFullYear(), baseUTC.getUTCMonth(), 1));
+  if (baseUTC.getTime() > cur.getTime()) {
+    cur = new Date(Date.UTC(baseUTC.getUTCFullYear(), baseUTC.getUTCMonth() + 1, 1));
+  }
 
   const out: Array<{ key: string; label: string }> = [];
   for (let i = 0; i < 12; i++) {
-    const d = new Date(cur.getFullYear(), cur.getMonth() + i, 1);
-    const key = toIsoDateOnly(d);
+    const d = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth() + i, 1));
+    const key = toIsoDateOnlyUTC(d); // ex: 2026-03-01
     out.push({ key, label: `Clôture — ${fmtDateFRLongFromIso(key)}` });
   }
   return out;
