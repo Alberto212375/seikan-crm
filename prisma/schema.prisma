@@ -112,6 +112,20 @@ model Client {
   email String?
   phone String?
 
+  // ✅ NEW (structure CRM)
+  siret     String?
+  firstName String?
+  lastName  String?
+
+  street     String?
+  postalCode String?
+  city       String?
+
+  prospectedByPhone  Boolean @default(false)
+  prospectedByEmail  Boolean @default(false)
+  prospectedInPerson Boolean @default(false)
+  clientDepuisLe     DateTime?
+
   billingAddress  String?
   shippingAddress String?
   tags            String[] @default([])

@@ -167,63 +167,74 @@ function splitAdresseFull(adresse: string): { street: string; postalCode: string
 function toUi(c: any): ClientUi {
   const n = safeJsonNotes(c.notes) ?? {};
 
-  // ✅ NOUVEAU : source de vérité = colonnes Prisma
-  // fallback = notes (compat) si jamais
+  // ✅ source de vérité = colonnes Prisma
+  // fallback = notes (compat)
+
   const rawSociete = String(c.companyName ?? n.societe ?? "");
   const rawService = String(c.serviceName ?? n.service ?? "");
-
-  // ✅ garde ton normalize “anti pollution”
   const normalized = normalizeCompanyAndService(rawSociete, rawService);
 
   const isProfessional = c?.type === "COMPANY" || Boolean(n.isProfessional ?? false);
-    // ✅ 1) priorité : notes.lastName / notes.firstName
-  let nameSplit = splitLastFirst(String(n.lastName ?? ""), String(n.firstName ?? ""));
 
-  // ✅ 2) fallback : client.displayName (très utile pour les PRO issus des prospects)
+  // ✅ nom/prénom : colonnes -> fallback notes -> fallback displayName
+  const lnCol = String(c.lastName ?? "").trim();
+  const fnCol = String(c.firstName ?? "").trim();
+
+  let nameSplit = splitLastFirst(
+    lnCol || String(n.lastName ?? ""),
+    fnCol || String(n.firstName ?? "")
+  );
+
   if (!nameSplit.lastName && !nameSplit.firstName) {
     const display = String(c.displayName ?? "").trim();
-    if (display) {
-      nameSplit = splitLastFirst(display, "");
-    }
+    if (display) nameSplit = splitLastFirst(display, "");
   }
+
+  // ✅ adresse : colonnes -> fallback notes -> fallback billingAddress/shippingAddress
+  const streetCol = String(c.street ?? "").trim();
+  const cpCol = String(c.postalCode ?? "").trim();
+  const cityCol = String(c.city ?? "").trim();
+
+  const addrFallback = splitAdresseFull(String(c.billingAddress ?? c.shippingAddress ?? ""));
+
+  const street = streetCol || String(n.street ?? addrFallback.street ?? "");
+  const postalCode = cpCol || String(n.postalCode ?? addrFallback.postalCode ?? "");
+  const city = cityCol || String(n.city ?? addrFallback.city ?? "");
 
   return {
     id: c.id,
 
     isProfessional,
 
-    // ✅ société propre + service propre
     societe: normalized.company,
     service: normalized.service,
-    siret: String(n.siret ?? ""),
+
+    // ✅ NEW : colonne siret -> fallback notes
+    siret: String(c.siret ?? n.siret ?? ""),
 
     lastName: nameSplit.lastName,
     firstName: nameSplit.firstName,
 
+    email: String(c.email ?? n.email ?? ""),
+    telephone: String(c.phone ?? n.telephone ?? ""),
 
-    email: String(n.email ?? c.email ?? ""),
-    telephone: String(n.telephone ?? c.phone ?? ""),
+    street: String(street ?? ""),
+    postalCode: String(postalCode ?? ""),
+    city: String(city ?? ""),
 
-        // ✅ adresse : priorité notes, sinon fallback depuis billingAddress/shippingAddress
-    street: String(
-      n.street ?? splitAdresseFull(String(c.billingAddress ?? c.shippingAddress ?? "")).street ?? ""
+    // ✅ NEW : colonnes prospection -> fallback notes
+    prospectedByPhone: Boolean(c.prospectedByPhone ?? n.prospectedByPhone ?? false),
+    prospectedByEmail: Boolean(c.prospectedByEmail ?? n.prospectedByEmail ?? false),
+    prospectedInPerson: Boolean(c.prospectedInPerson ?? n.prospectedInPerson ?? false),
+
+    // ✅ NEW : colonne date -> fallback notes -> createdAt
+    clientDepuisLe: String(
+      (c.clientDepuisLe ? toIsoDate(c.clientDepuisLe) : "") ||
+        n.clientDepuisLe ||
+        toIsoDate(c.createdAt)
     ),
-    postalCode: String(
-      n.postalCode ??
-        splitAdresseFull(String(c.billingAddress ?? c.shippingAddress ?? "")).postalCode ??
-        ""
-    ),
-    city: String(
-      n.city ?? splitAdresseFull(String(c.billingAddress ?? c.shippingAddress ?? "")).city ?? ""
-    ),
 
-    prospectedByPhone: Boolean(n.prospectedByPhone ?? false),
-    prospectedByEmail: Boolean(n.prospectedByEmail ?? false),
-    prospectedInPerson: Boolean(n.prospectedInPerson ?? false),
-
-    clientDepuisLe: String(n.clientDepuisLe ?? toIsoDate(c.createdAt)),
-
-    // ✅ IMPORTANT : notes = uniquement note libre
+    // ✅ note libre : champ notes dans JSON legacy si présent
     notes: String(n.notes ?? ""),
   };
 }

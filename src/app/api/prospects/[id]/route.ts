@@ -1,13 +1,12 @@
-// src/app/api/prospects/[id]/route.ts
+// src/app/api/prospects/[id]/convert/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-
-type Methode = { physique: boolean; appel: boolean; mail: boolean };
 type NotesJson = Record<string, any>;
+type Methode = { physique: boolean; appel: boolean; mail: boolean };
 
 function safeJson(s: string | null | undefined): NotesJson {
   if (!s) return {};
@@ -18,18 +17,73 @@ function safeJson(s: string | null | undefined): NotesJson {
   }
 }
 
+function norm(s: unknown) {
+  return (typeof s === "string" ? s : "").trim();
+}
+
+function clean(s: unknown) {
+  return String(s ?? "")
+    .replace(/\u00A0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizeSpaces(s: string) {
   return (s ?? "").replace(/\s+/g, " ").trim();
 }
 
-function parseISODateOnly(s: unknown): Date | null {
-  const v = typeof s === "string" ? s.trim() : "";
-  if (!v) return null;
-  const d = new Date(`${v}T00:00:00.000Z`);
-  return Number.isNaN(d.getTime()) ? null : d;
+// ✅ split tolérant sur - / ‒ / – / — / ― + espaces + NBSP
+function splitCompanyIfPolluted(companyRaw: string, serviceRaw: string) {
+  const company = clean(companyRaw);
+  const service = clean(serviceRaw);
+
+  if (!company) return { company: "", service };
+
+  const parts = company
+    .split(/\s*[-\u2012\u2013\u2014\u2015]\s*/g)
+    .map((x) => clean(x))
+    .filter(Boolean);
+
+  if (parts.length >= 2) {
+    const left = parts[0];
+    const right = parts.slice(1).join(" - ").trim();
+
+    if (service && right.toLowerCase() === service.toLowerCase()) return { company: left, service };
+    if (!service && right) return { company: left, service: right };
+    return { company: left, service };
+  }
+
+  return { company, service };
 }
 
-function toIsoDateOnly(d: Date | null | undefined) {
+function splitContact(contact: string): { lastName: string; firstName: string } {
+  const c = normalizeSpaces(contact);
+
+  // tiret long
+  if (c.includes("—")) {
+    const [a, b] = c.split("—").map((x) => normalizeSpaces(x));
+    return { lastName: a ?? "", firstName: b ?? "" };
+  }
+
+  const parts = c.split(" ").filter(Boolean);
+  if (parts.length <= 1) return { lastName: c, firstName: "" };
+  return { lastName: parts[0], firstName: parts.slice(1).join(" ") };
+}
+
+function splitAdresse(adresse: string): { street: string; postalCode: string; city: string } {
+  const a = normalizeSpaces(adresse);
+  const m = a.match(/(.*)\s(\d{5})\s(.+)$/);
+  if (m) {
+    return {
+      street: normalizeSpaces(m[1]),
+      postalCode: m[2],
+      city: normalizeSpaces(m[3]),
+    };
+  }
+  return { street: a, postalCode: "", city: "" };
+}
+
+function toIsoDateOnly(d: Date | undefined | null) {
   try {
     return d ? d.toISOString().slice(0, 10) : "";
   } catch {
@@ -37,103 +91,248 @@ function toIsoDateOnly(d: Date | null | undefined) {
   }
 }
 
-function methodeToSource(m: Methode | null | undefined): string | null {
-  if (!m) return null;
-  const parts: string[] = [];
-  if (m.physique) parts.push("physique");
-  if (m.appel) parts.push("appel");
-  if (m.mail) parts.push("mail");
-  return parts.length ? parts.join(",") : null;
+function parseISODateOnly(s: string): Date | null {
+  const v = String(s ?? "").trim();
+  if (!v) return null;
+  const d = new Date(`${v}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+function sourceToMethode(source: string | null | undefined): Methode {
+  const s = (source ?? "").toLowerCase();
+  return {
+    physique: s.includes("physique"),
+    appel: s.includes("appel"),
+    mail: s.includes("mail"),
+  };
+}
+
+function composeDisplayName(args: {
+  type: "COMPANY" | "INDIVIDUAL";
+  companyName: string;
+  lastName: string;
+  firstName: string;
+  fallbackDisplay?: string;
+  fallbackEmail?: string;
+}) {
+  const ln = (args.lastName || "").trim().toUpperCase();
+  const fn = (args.firstName || "").trim();
+
+  if (args.type === "COMPANY") {
+    return (args.companyName || args.fallbackDisplay || "Client").trim();
+  }
+
+  const full = [ln, fn].filter(Boolean).join(" ").trim();
+  return full || (args.fallbackDisplay || args.fallbackEmail || "Client");
+}
+
+export async function POST(_req: Request, { params }: { params: { id: string } }) {
   const id = params.id;
-  const body = await req.json().catch(() => null);
 
-  const societe = typeof body?.societe === "string" ? body.societe : undefined;
-  const contact = typeof body?.contact === "string" ? body.contact : undefined;
-  const service = typeof body?.service === "string" ? body.service : undefined;
-  const email = typeof body?.email === "string" ? body.email : undefined;
-  const telephone = typeof body?.telephone === "string" ? body.telephone : undefined;
-  const adresse = typeof body?.adresse === "string" ? body.adresse : undefined;
-  const demarcheLe = body?.demarcheLe;
-  const methode = body?.methode as Methode | undefined;
-  const isProfessional = typeof body?.isProfessional === "boolean" ? body.isProfessional : undefined;
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const prospect = await tx.prospect.findUnique({ where: { id } });
+      if (!prospect) return NextResponse.json({ error: "Prospect introuvable" }, { status: 404 });
 
+      // ✅ notes canonique prospect (si PATCH prospect a tourné)
+      const pn = safeJson(prospect.notes);
 
-  // siret est “UI only” dans ton schema actuel -> on le persiste dans notes JSON
-  const siret = typeof body?.siret === "string" ? body.siret : undefined;
+      // ✅ fallback legacy pour anciens prospects
+      const fallbackSociete = clean(pn.societe ?? prospect.company ?? "");
+      const fallbackService = clean(pn.service ?? prospect.needType ?? "");
+      const fallbackSiret = clean(pn.siret ?? "");
+      const fallbackContact = clean(pn.contact ?? prospect.name ?? "");
+      const fallbackAdresse = clean(pn.adresse ?? prospect.location ?? "");
+      const fallbackEmail = clean(pn.email ?? prospect.email ?? "");
+      const fallbackTelephone = clean(pn.telephone ?? prospect.phone ?? "");
 
-  // ✅ On récupère le prospect pour merge propre des notes
-  const existing = await prisma.prospect.findUnique({ where: { id } });
-  if (!existing) {
-    return NextResponse.json({ error: "Prospect introuvable" }, { status: 404 });
+      // ✅ nettoyage société/service si pollués (Société — Service)
+      const fixedCS = splitCompanyIfPolluted(fallbackSociete, fallbackService);
+      const companyName = fixedCS.company;
+      const serviceName = fixedCS.service;
+
+      // ✅ méthode
+      const methode: Methode =
+        pn.methode && typeof pn.methode === "object"
+          ? {
+              physique: Boolean(pn.methode.physique),
+              appel: Boolean(pn.methode.appel),
+              mail: Boolean(pn.methode.mail),
+            }
+          : sourceToMethode(prospect.source);
+
+      // ✅ démarché le (clientDepuisLe)
+      const demarcheLeISO =
+        clean(pn.demarcheLe) ||
+        (prospect.eventDate ? toIsoDateOnly(prospect.eventDate) : "") ||
+        toIsoDateOnly(prospect.createdAt);
+
+      const clientDepuisLe = demarcheLeISO ? parseISODateOnly(demarcheLeISO) : null;
+
+      // ✅ isProfessional (déduit si non fourni)
+      const inferredIsPro = Boolean(companyName || serviceName || fallbackSiret);
+      const isProfessional = typeof pn.isProfessional === "boolean" ? pn.isProfessional : inferredIsPro;
+
+      const nextType: "COMPANY" | "INDIVIDUAL" = isProfessional ? "COMPANY" : "INDIVIDUAL";
+      const typeLocked = nextType === "COMPANY"; // ✅ si PRO -> verrouillé
+
+      // ✅ contact split
+      let lastName = clean(pn.lastName);
+      let firstName = clean(pn.firstName);
+      if (!lastName && !firstName && fallbackContact) {
+        const s = splitContact(fallbackContact);
+        lastName = s.lastName;
+        firstName = s.firstName;
+      }
+
+      // ✅ adresse split (complète ce qui manque)
+      let street = clean(pn.street);
+      let postalCode = clean(pn.postalCode);
+      let city = clean(pn.city);
+
+      if (fallbackAdresse) {
+        const s = splitAdresse(fallbackAdresse);
+        if (!street) street = s.street;
+        if (!postalCode) postalCode = s.postalCode;
+        if (!city) city = s.city;
+      }
+
+      // ✅ displayName propre
+      const displayName = composeDisplayName({
+        type: nextType,
+        companyName: companyName,
+        lastName,
+        firstName,
+        fallbackDisplay: "",
+        fallbackEmail: fallbackEmail,
+      });
+
+      // ✅ adresse compat concat
+      const adresseFull = [street, [postalCode, city].filter(Boolean).join(" ")].filter(Boolean).join(" ").trim();
+
+      // ✅ notes JSON compat (mais la note libre reste vide)
+      const clientNotes: NotesJson = {
+        ...pn,
+
+        isProfessional: nextType === "COMPANY",
+        societe: companyName,
+        service: serviceName,
+        siret: fallbackSiret,
+
+        lastName,
+        firstName,
+
+        email: fallbackEmail,
+        telephone: fallbackTelephone,
+
+        street,
+        postalCode,
+        city,
+
+        prospectedInPerson: Boolean(methode.physique),
+        prospectedByPhone: Boolean(methode.appel),
+        prospectedByEmail: Boolean(methode.mail),
+
+        clientDepuisLe: demarcheLeISO,
+
+        // ✅ note libre = vide (tu ne veux pas polluer)
+        notes: "",
+      };
+
+      // ✅ anti doublon : si email existe -> update, sinon create
+      const existingClient = fallbackEmail ? await tx.client.findFirst({ where: { email: fallbackEmail } }) : null;
+
+      const client = existingClient
+        ? await tx.client.update({
+            where: { id: existingClient.id },
+            data: {
+              type: nextType,
+              typeLocked: typeLocked,
+
+              companyName: companyName || existingClient.companyName || null,
+              serviceName: serviceName || existingClient.serviceName || null,
+
+              siret: fallbackSiret || existingClient.siret || null,
+              firstName: firstName || existingClient.firstName || null,
+              lastName: lastName || existingClient.lastName || null,
+
+              email: fallbackEmail || existingClient.email || null,
+              phone: fallbackTelephone || existingClient.phone || null,
+
+              street: street || existingClient.street || null,
+              postalCode: postalCode || existingClient.postalCode || null,
+              city: city || existingClient.city || null,
+
+              prospectedInPerson: existingClient.prospectedInPerson || Boolean(methode.physique),
+              prospectedByPhone: existingClient.prospectedByPhone || Boolean(methode.appel),
+              prospectedByEmail: existingClient.prospectedByEmail || Boolean(methode.mail),
+
+              clientDepuisLe: existingClient.clientDepuisLe ?? clientDepuisLe,
+
+              displayName: displayName || existingClient.displayName,
+
+              // compat
+              billingAddress: adresseFull || existingClient.billingAddress,
+              shippingAddress: adresseFull || existingClient.shippingAddress,
+
+              // compat JSON
+              notes: JSON.stringify(clientNotes),
+            },
+          })
+        : await tx.client.create({
+            data: {
+              type: nextType,
+              typeLocked: typeLocked,
+
+              companyName: companyName || null,
+              serviceName: serviceName || null,
+
+              siret: fallbackSiret || null,
+              firstName: firstName || null,
+              lastName: lastName || null,
+
+              email: fallbackEmail || null,
+              phone: fallbackTelephone || null,
+
+              street: street || null,
+              postalCode: postalCode || null,
+              city: city || null,
+
+              prospectedInPerson: Boolean(methode.physique),
+              prospectedByPhone: Boolean(methode.appel),
+              prospectedByEmail: Boolean(methode.mail),
+
+              clientDepuisLe: clientDepuisLe,
+
+              displayName: displayName || "Client",
+
+              // compat
+              billingAddress: adresseFull || null,
+              shippingAddress: adresseFull || null,
+
+              // tags ok
+              tags: [],
+
+              // compat JSON
+              notes: JSON.stringify(clientNotes),
+            },
+          });
+
+      // relie prospect -> client (tracer)
+      await tx.prospect.update({
+        where: { id },
+        data: { convertedAt: new Date(), clientId: client.id },
+      });
+
+      // supprime le prospect (comme tu fais)
+      await tx.prospect.delete({ where: { id } });
+
+      return NextResponse.json({ ok: true, clientId: client.id });
+    });
+
+    return result;
+  } catch (e: any) {
+    console.error("❌ convert prospect -> client failed:", e);
+    return NextResponse.json({ error: "Conversion échouée", details: e?.message ?? String(e) }, { status: 500 });
   }
-
-  const pn = safeJson(existing.notes);
-
-  // ✅ Canonique: on stocke TOUT ce que l’UI utilise dans notes
-  if (societe !== undefined) pn.societe = normalizeSpaces(societe);
-  if (service !== undefined) pn.service = normalizeSpaces(service);
-  if (siret !== undefined) pn.siret = normalizeSpaces(siret);
-
-  if (contact !== undefined) pn.contact = normalizeSpaces(contact);
-  if (email !== undefined) pn.email = normalizeSpaces(email);
-  if (telephone !== undefined) pn.telephone = normalizeSpaces(telephone);
-  if (adresse !== undefined) pn.adresse = normalizeSpaces(adresse);
-
-  if (demarcheLe !== undefined) {
-    const d = parseISODateOnly(demarcheLe);
-    pn.demarcheLe = d ? toIsoDateOnly(d) : "";
-  }
-
-  if (methode !== undefined) {
-    pn.methode = {
-      physique: Boolean(methode.physique),
-      appel: Boolean(methode.appel),
-      mail: Boolean(methode.mail),
-    };
-  }
-
-  // ✅ isProfessional explicite (vient de l’UI)
-// si non fourni, on garde le précédent / on infère
-if (isProfessional !== undefined) {
-  pn.isProfessional = isProfessional;
-}
-
-// ✅ Bonus: fallback inféré (sert à la conversion)
-const inferredIsPro = Boolean(
-  normalizeSpaces(pn.societe ?? "") ||
-    normalizeSpaces(pn.service ?? "") ||
-    normalizeSpaces(pn.siret ?? "")
-);
-pn.isProfessional = Boolean(pn.isProfessional ?? inferredIsPro);
-
-
-  // ✅ Compat: on continue à écrire dans les colonnes legacy
-  const data: any = {};
-  if (societe !== undefined) data.company = societe || null;
-  if (contact !== undefined) data.name = contact || "";
-  if (service !== undefined) data.needType = service || null;
-  if (email !== undefined) data.email = email || null;
-  if (telephone !== undefined) data.phone = telephone || null;
-  if (adresse !== undefined) data.location = adresse || null;
-  if (demarcheLe !== undefined) data.eventDate = parseISODateOnly(demarcheLe);
-  if (methode !== undefined) data.source = methodeToSource(methode);
-
-  // ✅ On persiste notes JSON “canonique”
-  data.notes = JSON.stringify(pn);
-
-  const updated = await prisma.prospect.update({
-    where: { id },
-    data,
-  });
-
-  return NextResponse.json({ ok: true, updatedAt: updated.updatedAt.toISOString() });
-}
-
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
-  const id = params.id;
-  await prisma.prospect.delete({ where: { id } });
-  return NextResponse.json({ ok: true });
 }

@@ -246,8 +246,39 @@ const kind: "TEST" | "CLASSIC" = body.kind === "CLASSIC" ? "CLASSIC" : "TEST";
     const packagingLabel = normalize(body.packagingLabel || "Emballage en pochette plastique + carton rigide");
 
     // --- livraison + payBeforeDate (recalcul serveur) ---
-    let deliveryWindowLabel = normalize(body.deliveryWindowLabel || "Livraison entre le 12 et le 15 mars");
-    let payBeforeDate = new Date(`${new Date().getFullYear()}-03-01T00:00:00.000Z`);
+    let deliveryWindowLabel = "";
+let payBeforeDate: Date;
+let effectiveClosureISO: string;
+
+// ✅ TEST = clôture fixe 1er mars
+if (kind === "TEST") {
+  const year = new Date().getFullYear();
+  effectiveClosureISO = `${year}-03-01`;
+  deliveryWindowLabel = "Livraison entre le 12 et le 15 mars";
+  payBeforeDate = new Date(`${effectiveClosureISO}T00:00:00.000Z`);
+} else {
+  if (!closureDateISO) {
+    return NextResponse.json({ error: "Clôture obligatoire pour une commande classique." }, { status: 400 });
+  }
+
+  const allowed = allowedClassicClosuresISO(new Date());
+  if (!allowed.includes(closureDateISO)) {
+    return NextResponse.json(
+      { error: "Clôture non autorisée." },
+      { status: 400 }
+    );
+  }
+
+  effectiveClosureISO = closureDateISO;
+
+  const computedDelivery = deliveryWindowFromClosureISO(closureDateISO);
+  if (!computedDelivery) {
+    return NextResponse.json({ error: "Clôture invalide." }, { status: 400 });
+  }
+
+  deliveryWindowLabel = computedDelivery;
+  payBeforeDate = new Date(`${closureDateISO}T00:00:00.000Z`);
+}
 
     if (kind === "CLASSIC") {
       if (!closureDateISO) {
@@ -363,8 +394,8 @@ const kind: "TEST" | "CLASSIC" = body.kind === "CLASSIC" ? "CLASSIC" : "TEST";
     const orderMeta = {
       code,
       kind,
-      closureMonthKey,
-      closureDateISO,
+      closureMonthKey: effectiveClosureISO.slice(0, 7),
+closureDateISO: effectiveClosureISO,
       deliveryWindowLabel,
       packagingLabel,
       pricing: {
@@ -422,43 +453,47 @@ const kind: "TEST" | "CLASSIC" = body.kind === "CLASSIC" ? "CLASSIC" : "TEST";
     // ✅ CRM : créer/mettre à jour Client + Facture auto
     // ===========================
 
-    // 1) Client (email NON unique dans ton schema -> findFirst puis update/create)
-const displayName = companyName ? companyName : `${firstName} ${lastName}`.trim();
+        // 1) Client : ✅ si existe déjà => on ne touche à RIEN (pas d'update)
+    //             ✅ sinon => on crée
+    const displayName = companyName ? companyName : `${firstName} ${lastName}`.trim();
 
-const existingClient = await prisma.client.findFirst({
-  where: { email }, // ok même si email n'est pas unique
-  select: { id: true },
-});
-
-const client = existingClient
-  ? await prisma.client.update({
-      where: { id: existingClient.id },
-      data: {
-        displayName,
-        companyName: companyName ?? null,
-        // on aligne l'adresse (simple : on stocke en string)
-        billingAddress: `${street}, ${postalCode} ${city}`.trim(),
-        shippingAddress: `${street}, ${postalCode} ${city}`.trim(),
-        // on ne force pas phone/tags/notes : on ne touche pas
-      },
-      select: { id: true },
-    })
-  : await prisma.client.create({
-      data: {
-        type: companyName ? "COMPANY" : "INDIVIDUAL",
-        typeLocked: Boolean(companyName),
-        companyName: companyName ?? null,
-        serviceName: null,
-        displayName,
-        email, // ton Client.email est optionnel, mais ici on en a un (order email)
-        phone: null,
-        billingAddress: `${street}, ${postalCode} ${city}`.trim(),
-        shippingAddress: `${street}, ${postalCode} ${city}`.trim(),
-        tags: [],
-        notes: null,
-      },
+    const existingClient = await prisma.client.findFirst({
+      where: { email },
       select: { id: true },
     });
+
+    const client = existingClient
+      ? existingClient
+      : await prisma.client.create({
+          data: {
+            type: "COMPANY",
+            typeLocked: true,
+
+            companyName: companyName ?? displayName ?? null,
+            serviceName: null,
+            displayName,
+
+            email,
+            phone: null,
+
+            // colonnes
+            siret: siret ?? null,
+            firstName: firstName || null,
+            lastName: lastName || null,
+            street: street || null,
+            postalCode: postalCode || null,
+            city: city || null,
+
+            // compat concat
+            billingAddress: `${street}, ${postalCode} ${city}`.trim(),
+            shippingAddress: `${street}, ${postalCode} ${city}`.trim(),
+
+            tags: [],
+            notes: null,
+          },
+          select: { id: true },
+        });
+
 
     // 2) Numérotation Facture FAC-YYYY-000001 (comme /api/invoices)
     const invYear = new Date().getFullYear();

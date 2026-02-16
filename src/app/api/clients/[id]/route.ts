@@ -112,34 +112,109 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const existing = await prisma.client.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const n = safeJsonNotes(existing.notes);
+  const existingNotes = safeJsonNotes(existing.notes);
 
   // ✅ on ignore toute tentative de modification des champs figés
   const patch = stripLockedFields(rawPatch);
 
-  // merge patch -> notes
-  const nextNotes: NotesJson = { ...n, ...patch };
+  // --- lecture patch (UI fields) ---
+  const isProfessionalPatch =
+    typeof patch.isProfessional === "boolean" ? patch.isProfessional : undefined;
 
-  // ✅ FIX DÉFINITIF : societe ne doit jamais contenir "— service"
-  const fixed = splitCompanyIfPolluted(String(nextNotes.societe ?? ""), String(nextNotes.service ?? ""));
-  nextNotes.societe = fixed.company;
-  nextNotes.service = fixed.service;
+  const societeRaw = clean(patch.societe ?? existing.companyName ?? existingNotes.societe ?? "");
+  const serviceRaw = clean(patch.service ?? existing.serviceName ?? existingNotes.service ?? "");
+  const fixed = splitCompanyIfPolluted(societeRaw, serviceRaw);
 
-  // champs standard synchronisés
-  const email = norm(nextNotes.email) || norm(existing.email);
-  const phone = norm(nextNotes.telephone) || norm(existing.phone);
+  const siret = clean(patch.siret ?? existing.siret ?? existingNotes.siret ?? "") || null;
 
-  const displayName = composeDisplayName(nextNotes);
-  const adresse = composeAdresse(nextNotes);
+  const lastName = clean(patch.lastName ?? existing.lastName ?? existingNotes.lastName ?? "");
+  const firstName = clean(patch.firstName ?? existing.firstName ?? existingNotes.firstName ?? "");
+
+  const email = clean(patch.email ?? existing.email ?? existingNotes.email ?? "") || null;
+  const phone = clean(patch.telephone ?? existing.phone ?? existingNotes.telephone ?? "") || null;
+
+  const street = clean(patch.street ?? existing.street ?? existingNotes.street ?? "");
+  const postalCode = clean(patch.postalCode ?? existing.postalCode ?? existingNotes.postalCode ?? "");
+  const city = clean(patch.city ?? existing.city ?? existingNotes.city ?? "");
+
+  // note libre (compat)
+  const freeNote = typeof patch.notes === "string" ? patch.notes : (existingNotes.notes ?? "");
+
+  // --- type (respect du lock) ---
+  const nextType =
+    existing.typeLocked
+      ? existing.type
+      : (isProfessionalPatch === true ? "COMPANY" : isProfessionalPatch === false ? "INDIVIDUAL" : existing.type);
+
+  // --- displayName : simple et propre ---
+  const displayName =
+    nextType === "COMPANY"
+      ? (fixed.company || existing.displayName || "Client")
+      : ([lastName.toUpperCase(), firstName].filter(Boolean).join(" ").trim() || existing.displayName || "Client");
+
+  // --- adresse compat concat ---
+  const adresse =
+    [street, [postalCode, city].filter(Boolean).join(" ")].filter(Boolean).join(" ").trim();
+
+  // --- notes JSON compat (on maintient l’ancien format pour ne rien casser) ---
+  const nextNotes: NotesJson = {
+    ...existingNotes,
+
+    // champs UI
+    isProfessional: nextType === "COMPANY",
+    societe: fixed.company,
+    service: fixed.service,
+    siret: siret ?? "",
+
+    lastName: lastName || "",
+    firstName: firstName || "",
+
+    email: email ?? "",
+    telephone: phone ?? "",
+
+    street: street || "",
+    postalCode: postalCode || "",
+    city: city || "",
+
+    // champs figés : on ne les modifie pas ici
+    prospectedByPhone: existing.prospectedByPhone ?? existingNotes.prospectedByPhone ?? false,
+    prospectedByEmail: existing.prospectedByEmail ?? existingNotes.prospectedByEmail ?? false,
+    prospectedInPerson: existing.prospectedInPerson ?? existingNotes.prospectedInPerson ?? false,
+    clientDepuisLe:
+      (existing.clientDepuisLe ? existing.clientDepuisLe.toISOString().slice(0, 10) : "") ||
+      existingNotes.clientDepuisLe ||
+      "",
+
+    // note libre
+    notes: String(freeNote ?? ""),
+  };
 
   const updated = await prisma.client.update({
     where: { id },
     data: {
+      type: nextType,
+
+      companyName: fixed.company || null,
+      serviceName: fixed.service || null,
+
+      siret: siret,
+      firstName: firstName || null,
+      lastName: lastName || null,
+
+      email,
+      phone,
+
+      street: street || null,
+      postalCode: postalCode || null,
+      city: city || null,
+
       displayName,
-      email: email || null,
-      phone: phone || null,
+
+      // compat
       billingAddress: adresse || null,
       shippingAddress: adresse || null,
+
+      // compat JSON
       notes: JSON.stringify(nextNotes),
     },
   });
