@@ -157,7 +157,7 @@ function classicUnitEur(totalQty: number) {
   const n = totalQty;
   if (n >= 40) return 10;
   if (n >= 20) return 11;
-  if (n >= 10) return 12;
+  if (n >= 10) return 13;
   // < 10 : la commande classique n'est pas autorisée
   return 0;
 }
@@ -601,7 +601,7 @@ packagingLabel: PACKAGING_LABEL,
                 <div className="font-semibold text-black">Grille tarifaire (HT / unité)</div>
                 <div className="mt-1 grid grid-cols-2 gap-x-8 gap-y-1">
   <div>10 à 19</div>
-  <div className="text-right font-medium">12 €</div>
+  <div className="text-right font-medium">13 €</div>
   <div>20 à 39</div>
   <div className="text-right font-medium">11 €</div>
   <div>40 et +</div>
