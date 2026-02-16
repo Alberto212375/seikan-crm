@@ -11,8 +11,14 @@ const FRANCO_CLASSIC_EUR = 180; // HT
 const SHIPPING_CLASSIC_EUR = 20; // HT
 const TEST_UNIT_EUR = 11;
 
-const MIN_TEST_TOTAL = 2;
-const MAX_TEST_TOTAL = 10;
+const TEST_LIMITS_BY_CODE: Record<string, { min: number; max: number }> = {
+  skgl: { min: 2, max: 10 },
+  "skgl-national": { min: 4, max: 15 },
+};
+
+function getTestLimits(code: string) {
+  return TEST_LIMITS_BY_CODE[code] ?? TEST_LIMITS_BY_CODE["skgl"];
+}
 
 const MIN_CLASSIC_TOTAL = 10;
 const MIN_CLASSIC_PER_VISUAL = 2;
@@ -229,6 +235,7 @@ export async function POST(req: Request) {
 
     // --- commande ---
     const code = normalize(body.code || "skgl").toLowerCase();
+    const testLimits = getTestLimits(code);
     const kind: "TEST" | "CLASSIC" = body.kind === "CLASSIC" ? "CLASSIC" : "TEST";
 
     const closureMonthKey = body.closureMonthKey ? normalize(body.closureMonthKey) : null;
@@ -295,13 +302,19 @@ export async function POST(req: Request) {
 
     // --- règles quantités ---
     if (kind === "TEST") {
-      if (postersQty < MIN_TEST_TOTAL) {
-        return NextResponse.json({ error: `Minimum ${MIN_TEST_TOTAL} posters en commande test.` }, { status: 400 });
-      }
-      if (postersQty > MAX_TEST_TOTAL) {
-        return NextResponse.json({ error: `Maximum ${MAX_TEST_TOTAL} posters en commande test.` }, { status: 400 });
-      }
-    } else {
+  if (postersQty < testLimits.min) {
+    return NextResponse.json(
+      { error: `Minimum ${testLimits.min} posters en commande test.` },
+      { status: 400 }
+    );
+  }
+  if (postersQty > testLimits.max) {
+    return NextResponse.json(
+      { error: `Maximum ${testLimits.max} posters en commande test.` },
+      { status: 400 }
+    );
+  }
+} else {
       if (postersQty < MIN_CLASSIC_TOTAL) {
         return NextResponse.json({ error: `Minimum ${MIN_CLASSIC_TOTAL} posters en commande classique.` }, { status: 400 });
       }

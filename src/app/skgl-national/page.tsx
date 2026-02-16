@@ -10,7 +10,7 @@ type Poster = {
   imageSrc: string;
 };
 
-const CODE = "skgl";
+const CODE = "skgln";
 const DELIVERY_TEST_LABEL = "Livraison entre le 12 et le 15 mars";
 const PACKAGING_LABEL = "Emballage en pochette plastique + carton rigide";
 
