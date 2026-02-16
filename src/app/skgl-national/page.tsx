@@ -10,7 +10,7 @@ type Poster = {
   imageSrc: string;
 };
 
-const CODE = "skgln";
+const CODE = "skgl";
 const DELIVERY_TEST_LABEL = "Livraison entre le 12 et le 15 mars";
 const PACKAGING_LABEL = "Emballage en pochette plastique + carton rigide";
 
@@ -471,8 +471,9 @@ const perVisualErrors = useMemo(() => {
     const items = [...posterItems, ...shippingItem];
 
     const payload = {
-      code: CODE,
-      kind,
+  code: CODE,
+  source: "national",
+  kind,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: email.trim(),

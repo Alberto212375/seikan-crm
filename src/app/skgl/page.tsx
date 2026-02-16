@@ -471,8 +471,9 @@ const perVisualErrors = useMemo(() => {
     const items = [...posterItems, ...shippingItem];
 
     const payload = {
-      code: CODE,
-      kind,
+  code: CODE,
+  source: "local",
+  kind,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: email.trim(),

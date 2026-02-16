@@ -11,15 +11,6 @@ const FRANCO_CLASSIC_EUR = 180; // HT
 const SHIPPING_CLASSIC_EUR = 20; // HT
 const TEST_UNIT_EUR = 11;
 
-const TEST_LIMITS_BY_CODE: Record<string, { min: number; max: number }> = {
-  skgl: { min: 2, max: 10 },
-  "skgl-national": { min: 4, max: 15 },
-};
-
-function getTestLimits(code: string) {
-  return TEST_LIMITS_BY_CODE[code] ?? TEST_LIMITS_BY_CODE["skgl"];
-}
-
 const MIN_CLASSIC_TOTAL = 10;
 const MIN_CLASSIC_PER_VISUAL = 2;
 
@@ -235,8 +226,8 @@ export async function POST(req: Request) {
 
     // --- commande ---
     const code = normalize(body.code || "skgl").toLowerCase();
-    const testLimits = getTestLimits(code);
-    const kind: "TEST" | "CLASSIC" = body.kind === "CLASSIC" ? "CLASSIC" : "TEST";
+const source = normalize((body as any).source || "local").toLowerCase();
+const kind: "TEST" | "CLASSIC" = body.kind === "CLASSIC" ? "CLASSIC" : "TEST";
 
     const closureMonthKey = body.closureMonthKey ? normalize(body.closureMonthKey) : null;
     const closureDateISO = body.closureDateISO ? normalize(body.closureDateISO) : null;
@@ -302,30 +293,23 @@ export async function POST(req: Request) {
 
     // --- règles quantités ---
     if (kind === "TEST") {
-  if (postersQty < testLimits.min) {
+  const min = source === "national" ? 4 : 2;
+  const max = source === "national" ? 15 : 10;
+
+  if (postersQty < min) {
     return NextResponse.json(
-      { error: `Minimum ${testLimits.min} posters en commande test.` },
+      { error: `Minimum ${min} posters en commande test.` },
       { status: 400 }
     );
   }
-  if (postersQty > testLimits.max) {
+
+  if (postersQty > max) {
     return NextResponse.json(
-      { error: `Maximum ${testLimits.max} posters en commande test.` },
+      { error: `Maximum ${max} posters en commande test.` },
       { status: 400 }
     );
   }
-} else {
-      if (postersQty < MIN_CLASSIC_TOTAL) {
-        return NextResponse.json({ error: `Minimum ${MIN_CLASSIC_TOTAL} posters en commande classique.` }, { status: 400 });
-      }
-      const bad = posterItems.filter((it) => it.qty > 0 && it.qty < MIN_CLASSIC_PER_VISUAL);
-      if (bad.length) {
-        return NextResponse.json(
-          { error: `Merci de sélectionner au moins ${MIN_CLASSIC_PER_VISUAL} posters par visuel.` },
-          { status: 400 }
-        );
-      }
-    }
+}
 
     // --- prix unitaire recalculé serveur ---
     const unitEur = kind === "TEST" ? TEST_UNIT_EUR : classicUnitEur(postersQty);
