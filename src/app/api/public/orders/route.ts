@@ -298,14 +298,14 @@ const kind: "TEST" | "CLASSIC" = body.kind === "CLASSIC" ? "CLASSIC" : "TEST";
 
   if (postersQty < min) {
     return NextResponse.json(
-      { error: `Minimum ${min} posters en commande test.` },
+      { error: `Minimum ${min} posters en commande découverte.` },
       { status: 400 }
     );
   }
 
   if (postersQty > max) {
     return NextResponse.json(
-      { error: `Maximum ${max} posters en commande test.` },
+      { error: `Maximum ${max} posters en commande découverte.` },
       { status: 400 }
     );
   }

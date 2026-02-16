@@ -591,7 +591,7 @@ packagingLabel: PACKAGING_LABEL,
 
           {kind === "TEST" ? (
             <p className="mt-1 text-sm text-black/70">
-              Commande test — Prix fixe : <span className="font-semibold">{TEST_UNIT_EUR} € HT / poster</span> — {deliveryWindowLabel}
+              Commande découverte — Prix fixe : <span className="font-semibold">{TEST_UNIT_EUR} € HT / poster</span> — {deliveryWindowLabel}
             </p>
           ) : (
             <div className="mt-1 space-y-2 text-sm text-black/70">
@@ -671,7 +671,7 @@ packagingLabel: PACKAGING_LABEL,
                 value={kind}
                 onChange={(e) => setKind(e.target.value as any)}
               >
-                <option value="TEST">Commande test</option>
+                <option value="TEST">Commande découverte</option>
                 <option value="CLASSIC">Commande classique</option>
               </select>
               <div className="mt-2 text-xs text-black/60">
