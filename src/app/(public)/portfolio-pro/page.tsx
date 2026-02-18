@@ -19,15 +19,16 @@ export default function PortfolioProPage() {
 
         <div className="flex gap-4 mb-10">
           <a
-            href="/Portfolio_Seikan_Gallery.pdf"
+            href="/portfolio-seikan-gallery.pdf"
             target="_blank"
+            rel="noopener noreferrer"
             className="px-6 py-3 border border-black hover:bg-black hover:text-white transition"
           >
             Voir le portfolio
           </a>
 
           <a
-            href="/Portfolio_Seikan_Gallery.pdf"
+            href="/portfolio-seikan-gallery.pdf"
             download
             className="px-6 py-3 bg-black text-white hover:opacity-80 transition"
           >
@@ -37,7 +38,7 @@ export default function PortfolioProPage() {
 
         <div className="border border-gray-200">
           <iframe
-            src="/Portfolio_Seikan_Gallery.pdf"
+            src="/portfolio-seikan-gallery.pdf"
             className="w-full h-[900px]"
           />
         </div>
