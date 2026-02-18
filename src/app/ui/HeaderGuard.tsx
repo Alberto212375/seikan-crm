@@ -5,13 +5,13 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 export default function HeaderGuard({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
+  const pathname = usePathname() || "/";
 
-  // ✅ pages publiques (pas de menu)
+  // ✅ pages publiques : on SUPPRIME le header CRM
+  if (pathname.startsWith("/public")) return null;
+
+  // ✅ si tu gardes une ancienne page publique hors /public
   if (pathname === "/skgl") return null;
-
-  // (si tu ajoutes d'autres pages publiques plus tard, ajoute-les ici)
-  // if (pathname.startsWith("/public")) return null;
 
   return <>{children}</>;
 }
